@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="SqlQueryAnalyzer.Demo/SqlQueryAnalyzer.Demo.csproj" />
+  <Project Path="SqlQueryAnalyzer/SqlQueryAnalyzer.csproj" />
+</Solution>
