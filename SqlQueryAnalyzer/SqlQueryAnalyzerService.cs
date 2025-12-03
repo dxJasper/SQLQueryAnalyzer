@@ -37,15 +37,17 @@ public sealed class SqlQueryAnalyzerService
             return result;
         }
         
-        // Extract tables
-        var tableVisitor = new TableReferenceVisitor();
-        fragment.Accept(tableVisitor);
-        result.Tables.AddRange(tableVisitor.Tables);
-        
-        // Extract CTEs
+        // Extract CTEs first
         var cteVisitor = new CteVisitor(this);
         fragment.Accept(cteVisitor);
         result.CommonTableExpressions.AddRange(cteVisitor.Ctes);
+        
+        // Extract tables
+        var tableVisitor = new TableReferenceVisitor();
+        var cteNames = cteVisitor.Ctes.Select(c => c.Name).ToList();
+        tableVisitor.SetCteNames(cteNames);
+        fragment.Accept(tableVisitor);
+        result.Tables.AddRange(tableVisitor.Tables);
         
         // Extract select columns
         var selectColumnVisitor = new SelectColumnVisitor();
@@ -82,7 +84,57 @@ public sealed class SqlQueryAnalyzerService
         fragment.Accept(lineageBuilder);
         result.ColumnLineages.AddRange(lineageBuilder.Lineages);
         
+        // Remove duplicates that may have been introduced by nested queries
+        RemoveDuplicates(result);
+        
         return result;
+    }
+    
+    private static void RemoveDuplicates(QueryAnalysisResult result)
+    {
+        // Remove duplicate tables by full name and alias combination
+        var uniqueTables = result.Tables
+            .GroupBy(t => new { t.FullName, t.Alias, t.Type })
+            .Select(g => g.First())
+            .ToList();
+        
+        result.Tables.Clear();
+        result.Tables.AddRange(uniqueTables);
+        
+        // Remove duplicate columns by table, column name, alias, and usage type
+        RemoveDuplicateColumns(result.SelectColumns);
+        RemoveDuplicateColumns(result.PredicateColumns);
+        RemoveDuplicateColumns(result.JoinColumns);
+        RemoveDuplicateColumns(result.GroupByColumns);
+        RemoveDuplicateColumns(result.OrderByColumns);
+        
+        // Remove duplicate lineages by output column name
+        var uniqueLineages = result.ColumnLineages
+            .GroupBy(l => new { l.OutputColumn, l.OutputAlias })
+            .Select(g => g.First())
+            .ToList();
+        
+        result.ColumnLineages.Clear();
+        result.ColumnLineages.AddRange(uniqueLineages);
+    }
+    
+    private static void RemoveDuplicateColumns(List<ColumnReference> columns)
+    {
+        var unique = columns
+            .GroupBy(c => new { 
+                c.TableAlias, 
+                c.TableName, 
+                c.Schema, 
+                c.ColumnName, 
+                c.Alias, 
+                c.UsageType,
+                c.Expression 
+            })
+            .Select(g => g.First())
+            .ToList();
+        
+        columns.Clear();
+        columns.AddRange(unique);
     }
     
     /// <summary>

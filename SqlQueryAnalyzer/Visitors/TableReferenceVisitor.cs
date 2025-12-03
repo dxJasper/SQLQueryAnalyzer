@@ -8,15 +8,25 @@ namespace SqlQueryAnalyzer.Visitors;
 /// </summary>
 internal sealed class TableReferenceVisitor : TSqlConcreteFragmentVisitor
 {
-    public List<TableReference> Tables { get; } = [];
-    
+    public List<QueryTableReference> Tables { get; } = [];
+
     private JoinType? _currentJoinType;
-    
+    private readonly HashSet<string> _cteNames = new(StringComparer.OrdinalIgnoreCase);
+
+    public void SetCteNames(IEnumerable<string> cteNames)
+    {
+        _cteNames.Clear();
+        foreach (var name in cteNames)
+        {
+            _cteNames.Add(name);
+        }
+    }
+
     public override void Visit(QualifiedJoin node)
     {
         // Visit first table (left side)
         node.FirstTableReference?.Accept(this);
-        
+
         // Set join type for second table
         _currentJoinType = node.QualifiedJoinType switch
         {
@@ -26,45 +36,48 @@ internal sealed class TableReferenceVisitor : TSqlConcreteFragmentVisitor
             QualifiedJoinType.FullOuter => Models.JoinType.Full,
             _ => Models.JoinType.Inner
         };
-        
+
         // Visit second table (right side)
         node.SecondTableReference?.Accept(this);
-        
+
         _currentJoinType = null;
-        
+
         // Visit the search condition
         node.SearchCondition?.Accept(this);
     }
-    
+
     public override void Visit(UnqualifiedJoin node)
     {
         node.FirstTableReference?.Accept(this);
-        
+
         _currentJoinType = Models.JoinType.Cross;
         node.SecondTableReference?.Accept(this);
         _currentJoinType = null;
     }
-    
+
     public override void Visit(NamedTableReference node)
     {
-        var table = new TableReference
+        var tableName = node.SchemaObject.BaseIdentifier?.Value ?? string.Empty;
+        var isCte = _cteNames.Contains(tableName);
+        
+        var table = new QueryTableReference
         {
-            Database = node.SchemaObject.DatabaseIdentifier?.Value,
-            Schema = node.SchemaObject.SchemaIdentifier?.Value,
-            TableName = node.SchemaObject.BaseIdentifier?.Value ?? string.Empty,
+            Database = isCte ? null : node.SchemaObject.DatabaseIdentifier?.Value,
+            Schema = isCte ? null : node.SchemaObject.SchemaIdentifier?.Value,
+            TableName = tableName,
             Alias = node.Alias?.Value,
-            Type = TableReferenceType.Table,
+            Type = isCte ? TableReferenceType.Cte : TableReferenceType.Table,
             JoinType = _currentJoinType,
             StartLine = node.StartLine,
             StartColumn = node.StartColumn
         };
-        
+
         Tables.Add(table);
     }
-    
+
     public override void Visit(SchemaObjectFunctionTableReference node)
     {
-        var table = new TableReference
+        var table = new QueryTableReference
         {
             Database = node.SchemaObject.DatabaseIdentifier?.Value,
             Schema = node.SchemaObject.SchemaIdentifier?.Value,
@@ -75,13 +88,13 @@ internal sealed class TableReferenceVisitor : TSqlConcreteFragmentVisitor
             StartLine = node.StartLine,
             StartColumn = node.StartColumn
         };
-        
+
         Tables.Add(table);
     }
-    
+
     public override void Visit(QueryDerivedTable node)
     {
-        var table = new TableReference
+        var table = new QueryTableReference
         {
             TableName = "[DerivedTable]",
             Alias = node.Alias?.Value,
@@ -90,10 +103,15 @@ internal sealed class TableReferenceVisitor : TSqlConcreteFragmentVisitor
             StartLine = node.StartLine,
             StartColumn = node.StartColumn
         };
-        
+
         Tables.Add(table);
-        
-        // Also visit the inner query
-        base.Visit(node);
+
+        // Don't call base to avoid visiting the inner query - it's handled by SubQueryVisitor
+    }
+
+    // Prevent traversal into CTE definitions - they're handled by CteVisitor
+    public override void Visit(CommonTableExpression node)
+    {
+        // Don't traverse into CTE definitions
     }
 }

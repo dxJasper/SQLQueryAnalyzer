@@ -95,4 +95,20 @@ internal sealed class OrderByColumnVisitor : TSqlConcreteFragmentVisitor
             _ => null
         };
     }
+
+    // Prevent traversal into CTEs and subqueries - they're handled separately
+    public override void Visit(CommonTableExpression node)
+    {
+        // Don't traverse into CTEs
+    }
+    
+    public override void Visit(ScalarSubquery node)
+    {
+        // Don't traverse into scalar subqueries
+    }
+    
+    public override void Visit(QueryDerivedTable node)
+    {
+        // Don't traverse into derived table subqueries
+    }
 }

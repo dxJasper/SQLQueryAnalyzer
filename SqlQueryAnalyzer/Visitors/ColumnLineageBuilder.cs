@@ -8,19 +8,20 @@ namespace SqlQueryAnalyzer.Visitors;
 /// </summary>
 internal sealed class ColumnLineageBuilder : TSqlConcreteFragmentVisitor
 {
-    private readonly List<TableReference> _tables;
-    private readonly Dictionary<string, TableReference> _tableByAlias;
-    
+    private readonly List<QueryTableReference> _tables;
+    private readonly Dictionary<string, QueryTableReference> _tableByAlias;
+
     public List<ColumnLineage> Lineages { get; } = [];
-    
-    public ColumnLineageBuilder(List<TableReference> tables)
+
+    public ColumnLineageBuilder(List<QueryTableReference> tables)
     {
         _tables = tables;
         _tableByAlias = tables
             .Where(t => !string.IsNullOrEmpty(t.Alias))
-            .ToDictionary(t => t.Alias!, t => t, StringComparer.OrdinalIgnoreCase);
+            .GroupBy(t => t.Alias!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
     }
-    
+
     public override void Visit(SelectScalarExpression node)
     {
         var outputAlias = node.ColumnName?.Value;
@@ -32,19 +33,19 @@ internal sealed class ColumnLineageBuilder : TSqlConcreteFragmentVisitor
             Transformation = DetermineTransformationType(node.Expression),
             IsComputed = node.Expression is not ColumnReferenceExpression
         };
-        
+
         // Extract source columns
         var sourceExtractor = new SourceColumnExtractor(_tables, _tableByAlias);
         node.Expression.Accept(sourceExtractor);
         lineage.SourceColumns.AddRange(sourceExtractor.SourceColumns);
-        
+
         Lineages.Add(lineage);
     }
-    
+
     public override void Visit(SelectStarExpression node)
     {
         var tableAlias = node.Qualifier?.Identifiers.LastOrDefault()?.Value;
-        
+
         if (tableAlias is not null && _tableByAlias.TryGetValue(tableAlias, out var table))
         {
             // Star from specific table
@@ -83,7 +84,7 @@ internal sealed class ColumnLineageBuilder : TSqlConcreteFragmentVisitor
             });
         }
     }
-    
+
     private static string GetExpressionName(ScalarExpression expression) => expression switch
     {
         ColumnReferenceExpression col => col.MultiPartIdentifier?.Identifiers.LastOrDefault()?.Value ?? "[Column]",
@@ -97,18 +98,16 @@ internal sealed class ColumnLineageBuilder : TSqlConcreteFragmentVisitor
         ScalarSubquery => "[Subquery]",
         _ => "[Expression]"
     };
-    
+
     private static TransformationType DetermineTransformationType(ScalarExpression expression) => expression switch
     {
         ColumnReferenceExpression => TransformationType.Direct,
         CastCall => TransformationType.Cast,
         ConvertCall => TransformationType.Cast,
-        FunctionCall func => IsAggregateFunction(func.FunctionName?.Value) 
-            ? TransformationType.Aggregate 
+        FunctionCall func => IsAggregateFunction(func.FunctionName?.Value)
+            ? TransformationType.Aggregate
             : TransformationType.Function,
         CaseExpression => TransformationType.Case,
-        SearchedCaseExpression => TransformationType.Case,
-        SimpleCaseExpression => TransformationType.Case,
         CoalesceExpression => TransformationType.Function,
         NullIfExpression => TransformationType.Function,
         IIfCall => TransformationType.Case,
@@ -122,43 +121,53 @@ internal sealed class ColumnLineageBuilder : TSqlConcreteFragmentVisitor
         ParenthesisExpression paren => DetermineTransformationType(paren.Expression),
         _ => TransformationType.Unknown
     };
-    
+
     private static bool IsAggregateFunction(string? functionName) =>
         functionName?.ToUpperInvariant() switch
         {
-            "SUM" or "COUNT" or "AVG" or "MIN" or "MAX" or 
-            "STDEV" or "STDEVP" or "VAR" or "VARP" or 
+            "SUM" or "COUNT" or "AVG" or "MIN" or "MAX" or
+            "STDEV" or "STDEVP" or "VAR" or "VARP" or
             "COUNT_BIG" or "GROUPING" or "GROUPING_ID" or
             "STRING_AGG" or "APPROX_COUNT_DISTINCT" => true,
             _ => false
         };
+
+    // Prevent traversal into CTEs and subqueries - they're handled separately
+    public override void Visit(CommonTableExpression node)
+    {
+        // Don't traverse into CTEs
+    }
+
+    public override void Visit(ScalarSubquery node)
+    {
+        // Don't traverse into scalar subqueries
+    }
+
+    public override void Visit(QueryDerivedTable node)
+    {
+        // Don't traverse into derived table subqueries
+    }
 }
 
 /// <summary>
 /// Extracts source columns from an expression
 /// </summary>
-internal sealed class SourceColumnExtractor : TSqlConcreteFragmentVisitor
+internal sealed class SourceColumnExtractor(
+    List<QueryTableReference> tables,
+    Dictionary<string, QueryTableReference> tableByAlias)
+    : TSqlConcreteFragmentVisitor
 {
-    private readonly List<TableReference> _tables;
-    private readonly Dictionary<string, TableReference> _tableByAlias;
-    
     public List<SourceColumn> SourceColumns { get; } = [];
-    
-    public SourceColumnExtractor(List<TableReference> tables, Dictionary<string, TableReference> tableByAlias)
-    {
-        _tables = tables;
-        _tableByAlias = tableByAlias;
-    }
-    
+
     public override void Visit(ColumnReferenceExpression node)
     {
         var identifiers = node.MultiPartIdentifier?.Identifiers;
-        if (identifiers is null || identifiers.Count == 0)
+        if (identifiers is null or { Count: 0 })
         {
             base.Visit(node);
             return;
         }
-        
+
         var sourceColumn = identifiers.Count switch
         {
             1 => CreateSourceColumnWithTableResolution(null, identifiers[0].Value),
@@ -178,17 +187,17 @@ internal sealed class SourceColumnExtractor : TSqlConcreteFragmentVisitor
             },
             _ => new SourceColumn { ColumnName = identifiers.Last().Value }
         };
-        
+
         SourceColumns.Add(sourceColumn);
         base.Visit(node);
     }
-    
+
     private SourceColumn CreateSourceColumnWithTableResolution(string? tableAliasOrName, string columnName)
     {
         if (tableAliasOrName is not null)
         {
             // Try to resolve the alias to a table
-            if (_tableByAlias.TryGetValue(tableAliasOrName, out var table))
+            if (tableByAlias.TryGetValue(tableAliasOrName, out var table))
             {
                 return new SourceColumn
                 {
@@ -198,11 +207,11 @@ internal sealed class SourceColumnExtractor : TSqlConcreteFragmentVisitor
                     ColumnName = columnName
                 };
             }
-            
+
             // Check if it's a direct table name match
-            var matchingTable = _tables.FirstOrDefault(t => 
+            var matchingTable = tables.FirstOrDefault(t =>
                 string.Equals(t.TableName, tableAliasOrName, StringComparison.OrdinalIgnoreCase));
-            
+
             if (matchingTable is not null)
             {
                 return new SourceColumn
@@ -213,7 +222,7 @@ internal sealed class SourceColumnExtractor : TSqlConcreteFragmentVisitor
                     ColumnName = columnName
                 };
             }
-            
+
             // Could not resolve - return as-is
             return new SourceColumn
             {
@@ -221,7 +230,7 @@ internal sealed class SourceColumnExtractor : TSqlConcreteFragmentVisitor
                 ColumnName = columnName
             };
         }
-        
+
         // No table qualifier - column could be from any table
         // In a real scenario, you'd need schema information to resolve this
         return new SourceColumn

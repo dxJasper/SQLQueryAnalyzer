@@ -7,7 +7,7 @@ public sealed class QueryAnalysisResult
 {
     public required string OriginalQuery { get; init; }
     public List<string> ParseErrors { get; init; } = [];
-    public List<TableReference> Tables { get; init; } = [];
+    public List<QueryTableReference> Tables { get; init; } = [];
     public List<ColumnReference> SelectColumns { get; init; } = [];
     public List<ColumnReference> PredicateColumns { get; init; } = [];
     public List<ColumnReference> JoinColumns { get; init; } = [];
@@ -16,9 +16,9 @@ public sealed class QueryAnalysisResult
     public List<CteDefinition> CommonTableExpressions { get; init; } = [];
     public List<SubQueryInfo> SubQueries { get; init; } = [];
     public List<ColumnLineage> ColumnLineages { get; init; } = [];
-    
+
     public bool HasErrors => ParseErrors.Count > 0;
-    
+
     /// <summary>
     /// All unique schemas referenced in the query
     /// </summary>
@@ -26,7 +26,7 @@ public sealed class QueryAnalysisResult
         .Where(t => !string.IsNullOrEmpty(t.Schema))
         .Select(t => t.Schema!)
         .Distinct(StringComparer.OrdinalIgnoreCase);
-    
+
     /// <summary>
     /// All columns grouped by their usage type
     /// </summary>
@@ -42,7 +42,7 @@ public sealed class QueryAnalysisResult
 /// <summary>
 /// Represents a table reference in the query
 /// </summary>
-public sealed class TableReference
+public sealed class QueryTableReference
 {
     public string? Database { get; init; }
     public string? Schema { get; init; }
@@ -52,16 +52,16 @@ public sealed class TableReference
     public JoinType? JoinType { get; init; }
     public int StartLine { get; init; }
     public int StartColumn { get; init; }
-    
-    public string FullName => string.Join(".", 
+
+    public string FullName => string.Join(".",
         new[] { Database, Schema, TableName }.Where(s => !string.IsNullOrEmpty(s)));
-    
+
     /// <summary>
     /// The identifier used to reference this table (alias if available, otherwise table name)
     /// </summary>
     public string ReferenceIdentifier => Alias ?? TableName;
-    
-    public override string ToString() => 
+
+    public override string ToString() =>
         Alias is not null ? $"{FullName} AS {Alias}" : FullName;
 }
 
@@ -98,15 +98,15 @@ public sealed class ColumnReference
     public bool IsAscending { get; init; } = true;
     public int StartLine { get; init; }
     public int StartColumn { get; init; }
-    
+
     /// <summary>
     /// The table/alias this column is associated with
     /// </summary>
     public string? SourceIdentifier => TableAlias ?? TableName;
-    
+
     public string FullName => string.Join(".",
         new[] { Schema, TableAlias ?? TableName, ColumnName }.Where(s => !string.IsNullOrEmpty(s)));
-    
+
     public override string ToString() =>
         Alias is not null ? $"{FullName} AS {Alias}" : FullName;
 }
@@ -133,27 +133,27 @@ public sealed class ColumnLineage
     /// The output column name (alias or original name)
     /// </summary>
     public required string OutputColumn { get; init; }
-    
+
     /// <summary>
     /// The output column alias (if any)
     /// </summary>
     public string? OutputAlias { get; init; }
-    
+
     /// <summary>
     /// Source columns that contribute to this output
     /// </summary>
     public List<SourceColumn> SourceColumns { get; init; } = [];
-    
+
     /// <summary>
     /// Whether this is a computed/derived column
     /// </summary>
     public bool IsComputed { get; init; }
-    
+
     /// <summary>
     /// The expression used to compute the column (if applicable)
     /// </summary>
     public string? Expression { get; init; }
-    
+
     /// <summary>
     /// Type of transformation applied
     /// </summary>
@@ -170,10 +170,10 @@ public sealed class SourceColumn
     public string? TableName { get; init; }
     public string? TableAlias { get; init; }
     public required string ColumnName { get; init; }
-    
+
     public string FullyQualifiedName => string.Join(".",
         new[] { Database, Schema, TableName, ColumnName }.Where(s => !string.IsNullOrEmpty(s)));
-    
+
     public override string ToString() => FullyQualifiedName;
 }
 
