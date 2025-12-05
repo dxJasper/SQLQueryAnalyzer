@@ -1,4 +1,4 @@
-using SqlQueryAnalyzer;
+﻿using SqlQueryAnalyzer;
 using SqlQueryAnalyzer.Models;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
@@ -37,7 +37,7 @@ PrintResult(result);
 
 // Test with GROUP BY and ORDER BY
 Console.WriteLine("\n" + new string('=', 80));
-Console.WriteLine("TEST WITH GROUP BY AND ORDER BY:");
+Console.WriteLine("TEST WITH GROUP BY and ORDER BY:");
 Console.WriteLine(new string('=', 80));
 
 var groupOrderQuery = """
@@ -170,9 +170,18 @@ static void PrintResult(QueryAnalysisResult result)
         Console.WriteLine($"   [{typeLabel}] {table.FullName}{(table.Alias is not null ? $" AS {table.Alias}" : "")}{joinLabel}");
     }
 
-    // Select columns
-    Console.WriteLine("\n📊 SELECT COLUMNS:");
+    // Select columns (all)
+    Console.WriteLine("\n📊 SELECT COLUMNS (All):");
     foreach (var col in result.SelectColumns)
+    {
+        var source = col.TableAlias ?? col.TableName ?? "[literal/expression]";
+        var expr = col.Expression is not null ? $" (expr: {Truncate(col.Expression, 40)})" : "";
+        Console.WriteLine($"   • {source}.{col.ColumnName}{(col.Alias is not null ? $" AS {col.Alias}" : "")}{expr}");
+    }
+
+    // Final query columns (what user actually gets as output)
+    Console.WriteLine("\n🎯 FINAL QUERY COLUMNS (Output):");
+    foreach (var col in result.FinalQueryColumns)
     {
         var source = col.TableAlias ?? col.TableName ?? "[literal/expression]";
         var expr = col.Expression is not null ? $" (expr: {Truncate(col.Expression, 40)})" : "";

@@ -173,40 +173,4 @@ public class ComplexQueriesTests
         Assert.False(isValid);
         Assert.NotEmpty(errors);
     }
-
-    [Fact]  
-    public void Debug_GroupByVisitor_DirectTest()
-    {
-        var sql = """
-            SELECT 
-                c.category_name,
-                p.supplier_id,
-                COUNT(*) AS product_count
-            FROM dbo.Products p
-            INNER JOIN dbo.Categories c ON p.category_id = c.category_id
-            GROUP BY c.category_name, p.supplier_id
-        """;
-
-        // Parse the SQL directly
-        var parser = new Microsoft.SqlServer.TransactSql.ScriptDom.TSql160Parser(true);
-        using var reader = new StringReader(sql);
-        var fragment = parser.Parse(reader, out var errors);
-        
-        Assert.Empty(errors);
-        
-        // Test the visitor directly
-        var groupByVisitor = new SqlQueryAnalyzer.Visitors.GroupByColumnVisitor();
-        fragment.Accept(groupByVisitor);
-        
-        // Debug: what did we find?
-        var output = new StringBuilder();
-        output.AppendLine($"Found {groupByVisitor.Columns.Count} GROUP BY columns:");
-        foreach (var col in groupByVisitor.Columns)
-        {
-            output.AppendLine($"  - {col.TableAlias}.{col.ColumnName}");
-        }
-        
-        // This will show in test output
-        Assert.True(groupByVisitor.Columns.Count >= 2, output.ToString());
-    }
 }

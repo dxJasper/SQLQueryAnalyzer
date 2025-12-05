@@ -1,0 +1,336 @@
+using SqlQueryAnalyzer;
+using SqlQueryAnalyzer.Models;
+using Xunit;
+
+namespace SqlQueryAnalyzer.Tests;
+
+/// <summary>
+/// Integration tests based on the demo queries to ensure consistent behavior
+/// These tests validate the core functionality shown in the demo
+/// </summary>
+public class DemoQueryTests
+{
+    private readonly SqlQueryAnalyzerService _analyzer = new();
+    private static readonly AnalysisOptions Options = new() { IncludeInnerTables = false, DeduplicateResults = true };
+
+    [Fact]
+    public void UserExampleQuery_ComplexJoinQuery_ParsesSuccessfully()
+    {
+        var sql = """
+            SELECT  
+                km_k.DX_ID AS NUMCLI, 
+                'Prospect' AS CATCLI, 
+                cast(NULL as nvarchar(50)) AS PRNCLI, 
+                rbm_p.name AS NOMCLI, 
+                CASE 
+                    WHEN rbm_ps.birth_date < CAST('1930-01-01' AS DATETIME2) 
+                    THEN CAST('1930-01-01' AS DATETIME2) 
+                    ELSE rbm_ps.birth_date 
+                END AS DATNAI,
+                rbm_p.identification_number AS NUMIDT, 
+                vrt_n.doelwaarde AS NATION, 
+                'xx' AS CODTIT, 
+                '4' AS CODLAN 
+            FROM KM.Klant AS km_k 
+            JOIN RBM.PARTIES AS rbm_p ON km_k.Party_Id = rbm_p.party_id 
+            JOIN mks.Klant_clean AS kc ON kc.identification_number = rbm_p.identification_number 
+            LEFT JOIN RBM.PERSON_SPECIFICS AS rbm_ps ON rbm_ps.party_id = rbm_p.party_id 
+            LEFT JOIN VRT.Nationaliteit AS vrt_n ON vrt_n.bronwaarde = rbm_ps.nationality_code
+            """;
+
+        var result = _analyzer.Analyze(sql, Options);
+        
+        Assert.False(result.HasErrors);
+
+        // For simple queries, SelectColumns and FinalQueryColumns should be equal
+        Assert.Equal(9, result.SelectColumns.Count);
+        Assert.Equal(9, result.FinalQueryColumns.Count);
+        Assert.Equal(result.SelectColumns.Count, result.FinalQueryColumns.Count);
+
+        // Verify we have the expected schemas
+        Assert.Contains("KM", result.Schemas);
+        Assert.Contains("RBM", result.Schemas);
+        Assert.Contains("mks", result.Schemas);
+        Assert.Contains("VRT", result.Schemas);
+
+        // Verify we have 5 tables
+        Assert.Equal(5, result.Tables.Count);
+
+        // Verify we have JOIN columns
+        Assert.True(result.JoinColumns.Count >= 6);
+
+        // Verify column lineages
+        Assert.Equal(9, result.ColumnLineages.Count);
+    }
+
+    [Fact]
+    public void GroupByOrderByQuery_AggregateQuery_ParsesSuccessfully()
+    {
+        var sql = """
+            SELECT 
+                c.category_name,
+                p.supplier_id,
+                COUNT(*) AS product_count,
+                SUM(p.unit_price * p.units_in_stock) AS total_value,
+                AVG(p.unit_price) AS avg_price
+            FROM dbo.Products p
+            INNER JOIN dbo.Categories c ON p.category_id = c.category_id
+            LEFT JOIN dbo.Suppliers s ON p.supplier_id = s.supplier_id
+            WHERE p.discontinued = 0
+                AND p.unit_price > 10
+            GROUP BY c.category_name, p.supplier_id
+            HAVING COUNT(*) > 5
+            ORDER BY total_value DESC, c.category_name ASC
+            """;
+
+        var result = _analyzer.Analyze(sql, Options);
+        
+        Assert.False(result.HasErrors);
+
+        // For simple queries, SelectColumns and FinalQueryColumns should be equal
+        Assert.Equal(5, result.SelectColumns.Count);
+        Assert.Equal(5, result.FinalQueryColumns.Count);
+        Assert.Equal(result.SelectColumns.Count, result.FinalQueryColumns.Count);
+
+        // Verify we have the expected schema
+        Assert.Contains("dbo", result.Schemas);
+
+        // Verify we have 3 tables
+        Assert.Equal(3, result.Tables.Count);
+
+        // Verify we have GROUP BY columns
+        Assert.Equal(2, result.GroupByColumns.Count);
+
+        // Verify we have ORDER BY columns
+        Assert.Equal(2, result.OrderByColumns.Count);
+    }
+
+    [Fact]
+    public void CteQuery_WithMultipleCtes_ShowsDistinctionBetweenSelectAndFinalColumns()
+    {
+        var sql = """
+            WITH ActiveCustomers AS (
+                SELECT customer_id, name, email
+                FROM dbo.Customers
+                WHERE status = 'Active'
+            ),
+            RecentOrders AS (
+                SELECT customer_id, COUNT(*) as order_count, MAX(order_date) as last_order
+                FROM dbo.Orders
+                WHERE order_date > DATEADD(month, -3, GETDATE())
+                GROUP BY customer_id
+            )
+            SELECT 
+                ac.customer_id,
+                ac.name,
+                ac.email,
+                ro.order_count,
+                ro.last_order
+            FROM ActiveCustomers ac
+            LEFT JOIN RecentOrders ro ON ac.customer_id = ro.customer_id
+            WHERE ro.order_count > 5 OR ro.order_count IS NULL
+            ORDER BY ro.order_count DESC
+            """;
+
+        var result = _analyzer.Analyze(sql, Options);
+        
+        Assert.False(result.HasErrors);
+
+        // CRITICAL: This is the key distinction we want to maintain
+        // SelectColumns includes CTE definition columns (10 total)
+        Assert.Equal(10, result.SelectColumns.Count);
+        
+        // FinalQueryColumns only includes final query output (5 columns)
+        Assert.Equal(5, result.FinalQueryColumns.Count);
+        
+        // FinalQueryColumns should be less than SelectColumns for CTE queries
+        Assert.True(result.FinalQueryColumns.Count < result.SelectColumns.Count);
+
+        // Verify we have CTEs
+        Assert.Equal(2, result.CommonTableExpressions.Count);
+        Assert.Contains(result.CommonTableExpressions, c => c.Name == "ActiveCustomers");
+        Assert.Contains(result.CommonTableExpressions, c => c.Name == "RecentOrders");
+
+        // Verify the final query columns are the expected ones
+        Assert.Contains(result.FinalQueryColumns, c => c.TableAlias == "ac" && c.ColumnName == "customer_id");
+        Assert.Contains(result.FinalQueryColumns, c => c.TableAlias == "ac" && c.ColumnName == "name");
+        Assert.Contains(result.FinalQueryColumns, c => c.TableAlias == "ac" && c.ColumnName == "email");
+        Assert.Contains(result.FinalQueryColumns, c => c.TableAlias == "ro" && c.ColumnName == "order_count");
+        Assert.Contains(result.FinalQueryColumns, c => c.TableAlias == "ro" && c.ColumnName == "last_order");
+    }
+
+    [Fact]
+    public void SubqueryQuery_WithScalarAndExistsSubqueries_ShowsDistinctionBetweenSelectAndFinalColumns()
+    {
+        var sql = """
+            SELECT 
+                p.product_id,
+                p.name,
+                (SELECT AVG(price) FROM dbo.Products) as avg_price
+            FROM dbo.Products p
+            WHERE p.category_id IN (
+                SELECT category_id 
+                FROM dbo.Categories 
+                WHERE active = 1
+            )
+            AND EXISTS (
+                SELECT 1 
+                FROM dbo.Inventory i 
+                WHERE i.product_id = p.product_id AND i.quantity > 0
+            )
+            """;
+
+        var result = _analyzer.Analyze(sql, Options);
+        
+        Assert.False(result.HasErrors);
+
+        // CRITICAL: This is the key distinction we want to maintain
+        // SelectColumns includes subquery SELECT items (6 total based on actual behavior)
+        Assert.Equal(6, result.SelectColumns.Count);
+        
+        // FinalQueryColumns only includes main query output (3 columns)
+        Assert.Equal(3, result.FinalQueryColumns.Count);
+        
+        // FinalQueryColumns should be less than SelectColumns for subquery queries
+        Assert.True(result.FinalQueryColumns.Count < result.SelectColumns.Count);
+
+        // Verify we have subqueries
+        Assert.True(result.SubQueries.Count >= 3);
+
+        // Verify the final query columns are the expected ones
+        Assert.Contains(result.FinalQueryColumns, c => c.TableAlias == "p" && c.ColumnName == "product_id");
+        Assert.Contains(result.FinalQueryColumns, c => c.TableAlias == "p" && c.ColumnName == "name");
+        Assert.Contains(result.FinalQueryColumns, c => c.Alias == "avg_price");
+    }
+
+    [Fact]
+    public void AllDemoQueries_MaintainCorrectColumnCountRelationships()
+    {
+        // Test simple query: SelectColumns == FinalQueryColumns
+        var simpleResult = _analyzer.Analyze("SELECT p.id, p.name FROM Products p");
+        Assert.False(simpleResult.HasErrors);
+        Assert.Equal(simpleResult.SelectColumns.Count, simpleResult.FinalQueryColumns.Count);
+
+        // Test CTE query: FinalQueryColumns < SelectColumns
+        var cteResult = _analyzer.Analyze("""
+            WITH Test AS (SELECT id, name, email FROM Users)
+            SELECT t.id, t.name FROM Test t
+            """);
+        Assert.False(cteResult.HasErrors);
+        Assert.True(cteResult.FinalQueryColumns.Count < cteResult.SelectColumns.Count);
+
+        // Test subquery: FinalQueryColumns < SelectColumns
+        var subqueryResult = _analyzer.Analyze("""
+            SELECT p.id, (SELECT COUNT(*) FROM Orders) as cnt
+            FROM Products p
+            """);
+        Assert.False(subqueryResult.HasErrors);
+        Assert.True(subqueryResult.FinalQueryColumns.Count < subqueryResult.SelectColumns.Count);
+        
+        // Universal rule for all queries: FinalQueryColumns should never exceed SelectColumns
+        Assert.True(simpleResult.FinalQueryColumns.Count <= simpleResult.SelectColumns.Count);
+        Assert.True(cteResult.FinalQueryColumns.Count <= cteResult.SelectColumns.Count);
+        Assert.True(subqueryResult.FinalQueryColumns.Count <= subqueryResult.SelectColumns.Count);
+    }
+
+    [Fact]
+    public void AllDemoQueries_ParseWithoutErrors()
+    {
+        // Smoke test to ensure all demo queries parse successfully
+        var demoQueries = new[]
+        {
+            // User's complex query
+            """
+            SELECT  
+                km_k.DX_ID AS NUMCLI, 
+                'Prospect' AS CATCLI, 
+                cast(NULL as nvarchar(50)) AS PRNCLI, 
+                rbm_p.name AS NOMCLI, 
+                CASE 
+                    WHEN rbm_ps.birth_date < CAST('1930-01-01' AS DATETIME2) 
+                    THEN CAST('1930-01-01' AS DATETIME2) 
+                    ELSE rbm_ps.birth_date 
+                END AS DATNAI,
+                rbm_p.identification_number AS NUMIDT, 
+                vrt_n.doelwaarde AS NATION, 
+                'xx' AS CODTIT, 
+                '4' AS CODLAN 
+            FROM KM.Klant AS km_k 
+            JOIN RBM.PARTIES AS rbm_p ON km_k.Party_Id = rbm_p.party_id 
+            JOIN mks.Klant_clean AS kc ON kc.identification_number = rbm_p.identification_number 
+            LEFT JOIN RBM.PERSON_SPECIFICS AS rbm_ps ON rbm_ps.party_id = rbm_p.party_id 
+            LEFT JOIN VRT.Nationaliteit AS vrt_n ON vrt_n.bronwaarde = rbm_ps.nationality_code
+            """,
+            
+            // GROUP BY query
+            """
+            SELECT 
+                c.category_name,
+                p.supplier_id,
+                COUNT(*) AS product_count,
+                SUM(p.unit_price * p.units_in_stock) AS total_value,
+                AVG(p.unit_price) AS avg_price
+            FROM dbo.Products p
+            INNER JOIN dbo.Categories c ON p.category_id = c.category_id
+            LEFT JOIN dbo.Suppliers s ON p.supplier_id = s.supplier_id
+            WHERE p.discontinued = 0
+                AND p.unit_price > 10
+            GROUP BY c.category_name, p.supplier_id
+            HAVING COUNT(*) > 5
+            ORDER BY total_value DESC, c.category_name ASC
+            """,
+            
+            // CTE query
+            """
+            WITH ActiveCustomers AS (
+                SELECT customer_id, name, email
+                FROM dbo.Customers
+                WHERE status = 'Active'
+            ),
+            RecentOrders AS (
+                SELECT customer_id, COUNT(*) as order_count, MAX(order_date) as last_order
+                FROM dbo.Orders
+                WHERE order_date > DATEADD(month, -3, GETDATE())
+                GROUP BY customer_id
+            )
+            SELECT 
+                ac.customer_id,
+                ac.name,
+                ac.email,
+                ro.order_count,
+                ro.last_order
+            FROM ActiveCustomers ac
+            LEFT JOIN RecentOrders ro ON ac.customer_id = ro.customer_id
+            WHERE ro.order_count > 5 OR ro.order_count IS NULL
+            ORDER BY ro.order_count DESC
+            """,
+            
+            // Subquery query
+            """
+            SELECT 
+                p.product_id,
+                p.name,
+                (SELECT AVG(price) FROM dbo.Products) as avg_price
+            FROM dbo.Products p
+            WHERE p.category_id IN (
+                SELECT category_id 
+                FROM dbo.Categories 
+                WHERE active = 1
+            )
+            AND EXISTS (
+                SELECT 1 
+                FROM dbo.Inventory i 
+                WHERE i.product_id = p.product_id AND i.quantity > 0
+            )
+            """
+        };
+
+        for (int i = 0; i < demoQueries.Length; i++)
+        {
+            var result = _analyzer.Analyze(demoQueries[i], Options);
+            Assert.False(result.HasErrors, $"Demo query {i + 1} should parse without errors");
+            Assert.True(result.FinalQueryColumns.Count > 0, $"Demo query {i + 1} should have final query columns");
+            Assert.True(result.SelectColumns.Count > 0, $"Demo query {i + 1} should have select columns");
+        }
+    }
+}

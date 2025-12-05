@@ -82,6 +82,11 @@ public sealed class SqlQueryAnalyzerService
         fragment.Accept(subqueryVisitor);
         result.SubQueries.AddRange(subqueryVisitor.SubQueries);
 
+        // Extract final query columns (only the outermost SELECT that produces the actual result)
+        var finalQueryVisitor = new FinalQueryColumnVisitor();
+        fragment.Accept(finalQueryVisitor);
+        result.FinalQueryColumns.AddRange(finalQueryVisitor.Columns);
+
         // Build column lineage
         var lineageBuilder = new ColumnLineageBuilder(result.Tables);
         fragment.Accept(lineageBuilder);

@@ -16,6 +16,11 @@ public sealed class QueryAnalysisResult
     public List<CteDefinition> CommonTableExpressions { get; init; } = [];
     public List<SubQueryInfo> SubQueries { get; init; } = [];
     public List<ColumnLineage> ColumnLineages { get; init; } = [];
+    /// <summary>
+    /// The final output columns that the user will receive as query results.
+    /// This only includes the SELECT items from the outermost/final query, excluding inner CTEs and subqueries.
+    /// </summary>
+    public List<ColumnReference> FinalQueryColumns { get; init; } = [];
 
     public bool HasErrors => ParseErrors.Count > 0;
 
