@@ -235,4 +235,65 @@ public class FinalQueryColumnsTests
         Assert.Contains(result.FinalQueryColumns, c => c.ColumnName == "id");
         Assert.Contains(result.FinalQueryColumns, c => c.ColumnName == "name");
     }
+
+    [Fact]
+    public void FinalQueryColumns_UnpivotQuery_ReturnsExpectedColumns()
+    {
+        var sql = """
+            DECLARE @MOGID AS NVARCHAR(255) = (
+            SELECT        v.Value
+            FROM    DCA.Variable AS v
+            WHERE    v.Name = 'MOGID'
+                                            )
+            SELECT        up.col AS assettype
+            ,            AAPT.migrate AS migrate
+            ,            AAPT.accountType AS accountType
+            ,            up.value AS amount
+            ,            AAPT.postingType AS postingType
+            ,            peildatum.valueDate
+            FROM        AFL.CalculatedPostingAmount CPA
+                UNPIVOT (
+            value
+            FOR col IN ( budget_inhaalindexatie, budget_standaardregel, budget_aanvulling_tv
+                                    , budget_compensatiedepot, solidariteitsreserve, solidariteitsreserve_initieel
+                                    , solidariteitsreserve_delta, operationele_reserve, kostenvoorziening
+                                    , kostenvoorziening_initieel, kostenvoorziening_delta, wezenpensioen_voorziening
+                                    , wezenpensioen_voorziening_initieel, wezenpensioen_voorziening_delta, pvao_voorziening
+                                    , pvao_voorziening_initieel, pvao_voorziening_delta, ibnr_aop_voorziening
+                                    , ibnr_aop_voorziening_initieel, ibnr_aop_voorziening_delta, ibnr_pvao_voorziening
+                                    , ibnr_pvao_voorziening_initieel, ibnr_pvao_voorziening_delta, totaal_fondsvermogen
+                                    , totaal_fondsvermogen_initieel, totaal_fondsvermogen_delta
+                                    )
+                        ) up
+            LEFT JOIN    VRT.AccountAndPostingType AAPT
+            ON AAPT.vermogensOnderdeel = up.col
+            AND AAPT.MOGID = @MOGID
+            CROSS APPLY (
+            SELECT    MAX(lvpkc.PEILDATUMFUNC) AS valueDate
+            FROM    DK.L33_V_PVS_KLANT_CONTACTPUNT AS lvpkc
+                        ) AS peildatum
+            """;
+
+        var result = _analyzer.Analyze(sql, Options);
+        
+        // The query parses successfully!
+        Assert.False(result.HasErrors);
+
+        // Validate the expected 6 FinalQueryColumns as specified
+        Assert.Equal(6, result.FinalQueryColumns.Count);
+        
+        // Also verify SelectColumns includes the subquery SELECT (8 total)
+        Assert.Equal(8, result.SelectColumns.Count);
+        
+        // Verify the distinction: FinalQueryColumns < SelectColumns for this complex query
+        Assert.True(result.FinalQueryColumns.Count < result.SelectColumns.Count);
+        
+        // Verify the specific output columns exist (without being too specific about table aliases)
+        Assert.Contains(result.FinalQueryColumns, c => c.Alias == "assettype");
+        Assert.Contains(result.FinalQueryColumns, c => c.Alias == "migrate");
+        Assert.Contains(result.FinalQueryColumns, c => c.Alias == "accountType");
+        Assert.Contains(result.FinalQueryColumns, c => c.Alias == "amount");
+        Assert.Contains(result.FinalQueryColumns, c => c.Alias == "postingType");
+        Assert.Contains(result.FinalQueryColumns, c => c.ColumnName == "valueDate");
+    }
 }

@@ -322,6 +322,42 @@ public class DemoQueryTests
                 FROM dbo.Inventory i 
                 WHERE i.product_id = p.product_id AND i.quantity > 0
             )
+            """,
+            
+            // UNPIVOT query with variable declaration
+            """
+            DECLARE @MOGID AS NVARCHAR(255) = (
+            SELECT        v.Value
+            FROM    DCA.Variable AS v
+            WHERE    v.Name = 'MOGID'
+                                            )
+            SELECT        up.col AS assettype
+            ,            AAPT.migrate AS migrate
+            ,            AAPT.accountType AS accountType
+            ,            up.value AS amount
+            ,            AAPT.postingType AS postingType
+            ,            peildatum.valueDate
+            FROM        AFL.CalculatedPostingAmount CPA
+                UNPIVOT (
+            value
+            FOR col IN ( budget_inhaalindexatie, budget_standaardregel, budget_aanvulling_tv
+                                    , budget_compensatiedepot, solidariteitsreserve, solidariteitsreserve_initieel
+                                    , solidariteitsreserve_delta, operationele_reserve, kostenvoorziening
+                                    , kostenvoorziening_initieel, kostenvoorziening_delta, wezenpensioen_voorziening
+                                    , wezenpensioen_voorziening_initieel, wezenpensioen_voorziening_delta, pvao_voorziening
+                                    , pvao_voorziening_initieel, pvao_voorziening_delta, ibnr_aop_voorziening
+                                    , ibnr_aop_voorziening_initieel, ibnr_aop_voorziening_delta, ibnr_pvao_voorziening
+                                    , ibnr_pvao_voorziening_initieel, ibnr_pvao_voorziening_delta, totaal_fondsvermogen
+                                    , totaal_fondsvermogen_initieel, totaal_fondsvermogen_delta
+                                    )
+                        ) up
+            LEFT JOIN    VRT.AccountAndPostingType AAPT
+            ON AAPT.vermogensOnderdeel = up.col
+            AND AAPT.MOGID = @MOGID
+            CROSS APPLY (
+            SELECT    MAX(lvpkc.PEILDATUMFUNC) AS valueDate
+            FROM    DK.L33_V_PVS_KLANT_CONTACTPUNT AS lvpkc
+                        ) AS peildatum
             """
         };
 
@@ -332,5 +368,67 @@ public class DemoQueryTests
             Assert.True(result.FinalQueryColumns.Count > 0, $"Demo query {i + 1} should have final query columns");
             Assert.True(result.SelectColumns.Count > 0, $"Demo query {i + 1} should have select columns");
         }
+    }
+
+    [Fact]
+    public void UnpivotQueryWithDeclareAndCrossApply_ReturnsExpected6FinalColumns()
+    {
+        var sql = """
+            DECLARE @MOGID AS NVARCHAR(255) = (
+            SELECT        v.Value
+            FROM    DCA.Variable AS v
+            WHERE    v.Name = 'MOGID'
+                                            )
+            SELECT        up.col AS assettype
+            ,            AAPT.migrate AS migrate
+            ,            AAPT.accountType AS accountType
+            ,            up.value AS amount
+            ,            AAPT.postingType AS postingType
+            ,            peildatum.valueDate
+            FROM        AFL.CalculatedPostingAmount CPA
+                UNPIVOT (
+            value
+            FOR col IN ( budget_inhaalindexatie, budget_standaardregel, budget_aanvulling_tv
+                                    , budget_compensatiedepot, solidariteitsreserve, solidariteitsreserve_initieel
+                                    , solidariteitsreserve_delta, operationele_reserve, kostenvoorziening
+                                    , kostenvoorziening_initieel, kostenvoorziening_delta, wezenpensioen_voorziening
+                                    , wezenpensioen_voorziening_initieel, wezenpensioen_voorziening_delta, pvao_voorziening
+                                    , pvao_voorziening_initieel, pvao_voorziening_delta, ibnr_aop_voorziening
+                                    , ibnr_aop_voorziening_initieel, ibnr_aop_voorziening_delta, ibnr_pvao_voorziening
+                                    , ibnr_pvao_voorziening_initieel, ibnr_pvao_voorziening_delta, totaal_fondsvermogen
+                                    , totaal_fondsvermogen_initieel, totaal_fondsvermogen_delta
+                                    )
+                        ) up
+            LEFT JOIN    VRT.AccountAndPostingType AAPT
+            ON AAPT.vermogensOnderdeel = up.col
+            AND AAPT.MOGID = @MOGID
+            CROSS APPLY (
+            SELECT    MAX(lvpkc.PEILDATUMFUNC) AS valueDate
+            FROM    DK.L33_V_PVS_KLANT_CONTACTPUNT AS lvpkc
+                        ) AS peildatum
+            """;
+
+        var result = _analyzer.Analyze(sql, Options);
+        
+        Assert.False(result.HasErrors, $"Query should parse without errors. Errors: {string.Join("; ", result.ParseErrors)}");
+
+        // CRITICAL: This query should have exactly 6 FinalQueryColumns
+        Assert.Equal(6, result.FinalQueryColumns.Count);
+        
+        // Should have 8 SelectColumns due to the DECLARE subquery
+        Assert.Equal(8, result.SelectColumns.Count);
+        
+        // Verify the key distinction is maintained
+        Assert.True(result.FinalQueryColumns.Count < result.SelectColumns.Count,
+            "FinalQueryColumns should be less than SelectColumns for this complex query");
+
+        // Verify the specific 6 output columns by alias/name
+        var outputAliases = result.FinalQueryColumns.Select(c => c.Alias ?? c.ColumnName).ToList();
+        Assert.Contains("assettype", outputAliases);
+        Assert.Contains("migrate", outputAliases); 
+        Assert.Contains("accountType", outputAliases);
+        Assert.Contains("amount", outputAliases);
+        Assert.Contains("postingType", outputAliases);
+        Assert.Contains("valueDate", outputAliases);
     }
 }

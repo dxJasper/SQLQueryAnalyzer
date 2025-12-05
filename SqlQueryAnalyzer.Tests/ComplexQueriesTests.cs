@@ -173,4 +173,81 @@ public class ComplexQueriesTests
         Assert.False(isValid);
         Assert.NotEmpty(errors);
     }
+
+    [Fact]
+    public void Analyze_UnpivotWithDeclareAndCrossApply_ParsesAndAnalyzesCorrectly()
+    {
+        var sql = """
+            DECLARE @MOGID AS NVARCHAR(255) = (
+            SELECT        v.Value
+            FROM    DCA.Variable AS v
+            WHERE    v.Name = 'MOGID'
+                                            )
+            SELECT        up.col AS assettype
+            ,            AAPT.migrate AS migrate
+            ,            AAPT.accountType AS accountType
+            ,            up.value AS amount
+            ,            AAPT.postingType AS postingType
+            ,            peildatum.valueDate
+            FROM        AFL.CalculatedPostingAmount CPA
+                UNPIVOT (
+            value
+            FOR col IN ( budget_inhaalindexatie, budget_standaardregel, budget_aanvulling_tv
+                                    , budget_compensatiedepot, solidariteitsreserve, solidariteitsreserve_initieel
+                                    , solidariteitsreserve_delta, operationele_reserve, kostenvoorziening
+                                    , kostenvoorziening_initieel, kostenvoorziening_delta, wezenpensioen_voorziening
+                                    , wezenpensioen_voorziening_initieel, wezenpensioen_voorziening_delta, pvao_voorziening
+                                    , pvao_voorziening_initieel, pvao_voorziening_delta, ibnr_aop_voorziening
+                                    , ibnr_aop_voorziening_initieel, ibnr_aop_voorziening_delta, ibnr_pvao_voorziening
+                                    , ibnr_pvao_voorziening_initieel, ibnr_pvao_voorziening_delta, totaal_fondsvermogen
+                                    , totaal_fondsvermogen_initieel, totaal_fondsvermogen_delta
+                                    )
+                        ) up
+            LEFT JOIN    VRT.AccountAndPostingType AAPT
+            ON AAPT.vermogensOnderdeel = up.col
+            AND AAPT.MOGID = @MOGID
+            CROSS APPLY (
+            SELECT    MAX(lvpkc.PEILDATUMFUNC) AS valueDate
+            FROM    DK.L33_V_PVS_KLANT_CONTACTPUNT AS lvpkc
+                        ) AS peildatum
+            """;
+
+        var result = _analyzer.Analyze(sql, Options);
+        Assert.False(result.HasErrors);
+
+        // Test UNPIVOT table detection
+        Assert.Contains(result.Tables, t => t.TableName == "CalculatedPostingAmount" && t.Alias == "CPA");
+        
+        // Test JOIN detection with complex conditions
+        Assert.Contains(result.Tables, t => t.TableName == "AccountAndPostingType" && t.Alias == "AAPT" && t.JoinType == JoinType.Left);
+        
+        // Test CROSS APPLY detection (should be treated as a derived table)
+        Assert.Contains(result.Tables, t => t.Alias == "peildatum");
+        
+        // Test variable declaration subquery table detection
+        Assert.Contains(result.Tables, t => t.TableName == "Variable" && t.Alias == "v");
+        
+        // Test column analysis - should have 6 output columns
+        Assert.True(result.FinalQueryColumns.Count >= 6, $"Expected at least 6 final columns, got {result.FinalQueryColumns.Count}");
+        
+        // Test that UNPIVOT columns are properly handled
+        Assert.Contains(result.FinalQueryColumns, c => c.TableAlias == "up" && c.ColumnName == "col");
+        Assert.Contains(result.FinalQueryColumns, c => c.TableAlias == "up" && c.ColumnName == "value");
+        
+        // Test alias detection
+        Assert.Contains(result.FinalQueryColumns, c => c.Alias == "assettype");
+        Assert.Contains(result.FinalQueryColumns, c => c.Alias == "amount");
+        
+        // Test schema detection from multiple schemas
+        var schemas = result.Schemas.ToList();
+        Assert.Contains("AFL", schemas);
+        Assert.Contains("VRT", schemas);
+        Assert.Contains("DCA", schemas);
+        Assert.Contains("DK", schemas);
+        
+        // Test JOIN column detection
+        Assert.True(result.JoinColumns.Count >= 2, "Should detect JOIN columns");
+        Assert.Contains(result.JoinColumns, c => c.TableAlias == "AAPT" && c.ColumnName == "vermogensOnderdeel");
+        Assert.Contains(result.JoinColumns, c => c.TableAlias == "up" && c.ColumnName == "col");
+    }
 }
