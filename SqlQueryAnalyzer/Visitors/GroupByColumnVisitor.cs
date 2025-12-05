@@ -11,17 +11,37 @@ internal sealed class GroupByColumnVisitor : TSqlConcreteFragmentVisitor
     public List<ColumnReference> Columns { get; } = [];
     
     private bool _inGroupByClause;
+    private int _cteDepth;
+    
+    public override void Visit(WithCtesAndXmlNamespaces node)
+    {
+        // Track CTE region but let normal traversal work
+        _cteDepth++;
+        base.Visit(node);
+        _cteDepth--;
+    }
+
+    public override void Visit(CommonTableExpression node)
+    {
+        // Skip CTE definitions completely 
+        // Do NOT call base.Visit(node)
+    }
     
     public override void Visit(GroupByClause node)
     {
+        if (_cteDepth > 0)
+        {
+            return; // Skip GROUP BY inside CTEs
+        }
+        
         _inGroupByClause = true;
         base.Visit(node);
-        _inGroupByClause = false;
+        // Don't reset _inGroupByClause here - child nodes are processed after base.Visit()
     }
     
     public override void Visit(ExpressionGroupingSpecification node)
     {
-        if (!_inGroupByClause)
+        if (!_inGroupByClause || _cteDepth > 0)
         {
             base.Visit(node);
             return;
@@ -46,7 +66,7 @@ internal sealed class GroupByColumnVisitor : TSqlConcreteFragmentVisitor
     
     public override void Visit(ColumnReferenceExpression node)
     {
-        if (!_inGroupByClause)
+        if (!_inGroupByClause || _cteDepth > 0)
         {
             base.Visit(node);
         }
@@ -146,21 +166,5 @@ internal sealed class GroupByColumnVisitor : TSqlConcreteFragmentVisitor
             Columns.Add(column);
             base.Visit(node);
         }
-    }
-
-    // Prevent traversal into CTEs and subqueries - they're handled separately
-    public override void Visit(CommonTableExpression node)
-    {
-        // Don't traverse into CTEs
-    }
-    
-    public override void Visit(ScalarSubquery node)
-    {
-        // Don't traverse into scalar subqueries
-    }
-    
-    public override void Visit(QueryDerivedTable node)
-    {
-        // Don't traverse into derived table subqueries
     }
 }

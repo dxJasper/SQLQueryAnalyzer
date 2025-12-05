@@ -41,8 +41,6 @@ internal sealed class TableReferenceVisitor : TSqlConcreteFragmentVisitor
             Type = TableReferenceType.DerivedTable,
             JoinType = _currentJoinType,
             DirectReference = _subqueryDepth == 0,
-            StartLine = node.StartLine,
-            StartColumn = node.StartColumn
         };
         Tables.Add(table);
         // do not call base to avoid inner traversal
@@ -88,9 +86,7 @@ internal sealed class TableReferenceVisitor : TSqlConcreteFragmentVisitor
             Alias = node.Alias?.Value,
             Type = isCte ? TableReferenceType.Cte : TableReferenceType.Table,
             JoinType = _currentJoinType,
-            DirectReference = _subqueryDepth == 0,
-            StartLine = node.StartLine,
-            StartColumn = node.StartColumn
+            DirectReference = _subqueryDepth == 0
         };
 
         Tables.Add(table);

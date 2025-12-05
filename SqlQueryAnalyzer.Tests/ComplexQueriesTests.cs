@@ -1,6 +1,7 @@
 using SqlQueryAnalyzer;
 using SqlQueryAnalyzer.Models;
 using Xunit;
+using System.Text;
 
 namespace SqlQueryAnalyzer.Tests;
 
@@ -140,10 +141,72 @@ public class ComplexQueriesTests
     }
 
     [Fact]
+    public void Analyze_GroupByQuery_ReturnsGroupByColumns()
+    {
+        var sql = """
+            SELECT 
+                c.category_name,
+                p.supplier_id,
+                COUNT(*) AS product_count
+            FROM dbo.Products p
+            INNER JOIN dbo.Categories c ON p.category_id = c.category_id
+            GROUP BY c.category_name, p.supplier_id
+        """;
+
+        // Test without deduplication first
+        var resultNoDedup = _analyzer.Analyze(sql, new AnalysisOptions { DeduplicateResults = false });
+        Assert.False(resultNoDedup.HasErrors);
+        
+        // Test with deduplication
+        var result = _analyzer.Analyze(sql, Options);
+        Assert.False(result.HasErrors);
+
+        Assert.True(result.GroupByColumns.Count >= 2, $"Expected at least 2 GROUP BY columns, got {result.GroupByColumns.Count}");
+        Assert.Contains(result.GroupByColumns, c => c.TableAlias == "c" && c.ColumnName == "category_name");
+        Assert.Contains(result.GroupByColumns, c => c.TableAlias == "p" && c.ColumnName == "supplier_id");
+    }
+
+    [Fact]
     public void ValidateSyntax_InvalidSql_ReturnsErrors()
     {
         var (isValid, errors) = _analyzer.ValidateSyntax("SELECT FROM WHERE");
         Assert.False(isValid);
         Assert.NotEmpty(errors);
+    }
+
+    [Fact]  
+    public void Debug_GroupByVisitor_DirectTest()
+    {
+        var sql = """
+            SELECT 
+                c.category_name,
+                p.supplier_id,
+                COUNT(*) AS product_count
+            FROM dbo.Products p
+            INNER JOIN dbo.Categories c ON p.category_id = c.category_id
+            GROUP BY c.category_name, p.supplier_id
+        """;
+
+        // Parse the SQL directly
+        var parser = new Microsoft.SqlServer.TransactSql.ScriptDom.TSql160Parser(true);
+        using var reader = new StringReader(sql);
+        var fragment = parser.Parse(reader, out var errors);
+        
+        Assert.Empty(errors);
+        
+        // Test the visitor directly
+        var groupByVisitor = new SqlQueryAnalyzer.Visitors.GroupByColumnVisitor();
+        fragment.Accept(groupByVisitor);
+        
+        // Debug: what did we find?
+        var output = new StringBuilder();
+        output.AppendLine($"Found {groupByVisitor.Columns.Count} GROUP BY columns:");
+        foreach (var col in groupByVisitor.Columns)
+        {
+            output.AppendLine($"  - {col.TableAlias}.{col.ColumnName}");
+        }
+        
+        // This will show in test output
+        Assert.True(groupByVisitor.Columns.Count >= 2, output.ToString());
     }
 }

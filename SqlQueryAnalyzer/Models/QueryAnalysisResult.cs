@@ -50,8 +50,6 @@ public sealed class QueryTableReference
     public string? Alias { get; init; }
     public TableReferenceType Type { get; init; }
     public JoinType? JoinType { get; init; }
-    public int StartLine { get; init; }
-    public int StartColumn { get; init; }
     public bool DirectReference { get; init; } // true when referenced in top-level query
 
     // New: columns used against this table grouped by usage

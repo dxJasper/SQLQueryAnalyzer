@@ -1,6 +1,7 @@
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 using SqlQueryAnalyzer.Models;
 using SqlQueryAnalyzer.Visitors;
+using SqlQueryAnalyzer.Comparers;
 
 namespace SqlQueryAnalyzer;
 
@@ -112,27 +113,18 @@ public sealed class SqlQueryAnalyzerService
             }
         }
 
-        // Deduplicate per-table lists
+        // Deduplicate per-table lists using custom comparer
         foreach (var table in result.Tables)
         {
-            var dedupSelect = table.SelectColumns
-                .GroupBy(c => new { c.TableAlias, c.TableName, c.Schema, c.ColumnName, c.Alias, c.UsageType, c.Expression, c.IsAscending })
-                .Select(g => g.First())
-                .ToList();
+            var dedupSelect = table.SelectColumns.Distinct(ColumnReferenceEqualityComparer.Instance).ToList();
             table.SelectColumns.Clear();
             table.SelectColumns.AddRange(dedupSelect);
 
-            var dedupJoin = table.JoinColumns
-                .GroupBy(c => new { c.TableAlias, c.TableName, c.Schema, c.ColumnName, c.Alias, c.UsageType, c.Expression, c.IsAscending })
-                .Select(g => g.First())
-                .ToList();
+            var dedupJoin = table.JoinColumns.Distinct(ColumnReferenceEqualityComparer.Instance).ToList();
             table.JoinColumns.Clear();
             table.JoinColumns.AddRange(dedupJoin);
 
-            var dedupPred = table.PredicateColumns
-                .GroupBy(c => new { c.TableAlias, c.TableName, c.Schema, c.ColumnName, c.Alias, c.UsageType, c.Expression, c.IsAscending })
-                .Select(g => g.First())
-                .ToList();
+            var dedupPred = table.PredicateColumns.Distinct(ColumnReferenceEqualityComparer.Instance).ToList();
             table.PredicateColumns.Clear();
             table.PredicateColumns.AddRange(dedupPred);
         }
@@ -147,10 +139,8 @@ public sealed class SqlQueryAnalyzerService
 
     private static void RemoveDuplicates(QueryAnalysisResult result)
     {
-        var uniqueTables = result.Tables
-            .GroupBy(t => new { t.FullName, t.Alias, t.Type, t.DirectReference })
-            .Select(g => g.First())
-            .ToList();
+        // Use custom comparers for efficient deduplication
+        var uniqueTables = result.Tables.Distinct(QueryTableReferenceEqualityComparer.Instance).ToList();
         result.Tables.Clear();
         result.Tables.AddRange(uniqueTables);
 
@@ -160,36 +150,14 @@ public sealed class SqlQueryAnalyzerService
         RemoveDuplicateColumns(result.GroupByColumns);
         RemoveDuplicateColumns(result.OrderByColumns);
 
-        var uniqueLineages = result.ColumnLineages
-            .GroupBy(l => new 
-            { 
-                l.OutputColumn, 
-                l.OutputAlias,
-                Sources = string.Join("|", l.SourceColumns
-                    .Select(s => $"{s.TableAlias ?? s.TableName}:{s.ColumnName}")
-                    .OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
-            })
-            .Select(g => g.First())
-            .ToList();
+        var uniqueLineages = result.ColumnLineages.Distinct(ColumnLineageEqualityComparer.Instance).ToList();
         result.ColumnLineages.Clear();
         result.ColumnLineages.AddRange(uniqueLineages);
     }
 
     private static void RemoveDuplicateColumns(List<ColumnReference> columns)
     {
-        var unique = columns
-            .GroupBy(c => new {
-                c.TableAlias,
-                c.TableName,
-                c.Schema,
-                c.ColumnName,
-                c.Alias,
-                c.UsageType,
-                c.Expression,
-                c.IsAscending
-            })
-            .Select(g => g.First())
-            .ToList();
+        var unique = columns.Distinct(ColumnReferenceEqualityComparer.Instance).ToList();
         columns.Clear();
         columns.AddRange(unique);
     }
