@@ -161,6 +161,74 @@ var unpivotQuery = """
 var unpivotResult = analyzer.Analyze(unpivotQuery, new AnalysisOptions { IncludeInnerTables = false, DeduplicateResults = true });
 PrintResult(unpivotResult);
 
+// Test with complex nested JSON query
+Console.WriteLine("\n" + new string('=', 80));
+Console.WriteLine("TEST WITH COMPLEX NESTED JSON QUERY:");
+Console.WriteLine(new string('=', 80));
+
+var complexJsonQuery = """
+    SELECT	jsonsel.DX_ID
+    ,		COMPRESS(jsonsel.JSON_BERICHT) AS JSON_BERICHT_Compressed
+    INTO	JSON.Command
+    FROM	(
+    			SELECT	sc_.DX_ID
+    			,		JSON_BERICHT = (
+    								SELECT			'NlMigrationV11CommandData' AS [_type]
+    								,			sc.automaticTransferAttempts AS [automaticTransferAttempts]
+    								,			sc.birthDate AS [birthDate]
+    								,			CASE WHEN DisabilityInformation.DX_ID IS NOT NULL THEN
+    														'NlMigrationV11DisabilityInformation'
+    													ELSE NULL
+    												END AS [disabilityInformation._type]
+    								,			DisabilityInformation.benefitBasisFraction AS [disabilityInformation.benefitBasisFraction]
+    								,			DisabilityInformation.benefitBasisType AS [disabilityInformation.benefitBasisType]
+    								,			DisabilityInformation.benefitType AS [disabilityInformation.benefitType]
+    								,			DisabilityInformation.continuationPercentage AS [disabilityInformation.continuationPercentage]
+    								,			DisabilityInformation.continuationPercentageForAop AS [disabilityInformation.continuationPercentageForAop]
+    								,			DisabilityInformation.countValueForKapCover AS [disabilityInformation.countValueForKapCover]
+    								,			DisabilityInformation.dailyWageUncappedAmount AS [disabilityInformation.dailyWageUncappedAmount]
+    								,			DisabilityInformation.disabilityClassType AS [disabilityInformation.disabilityClassType]
+    								,			DisabilityInformation.disabilityFraction AS [disabilityInformation.disabilityFraction]
+    								,			DisabilityInformation.disabilityType AS [disabilityInformation.disabilityType]
+    								,			DisabilityInformation.entitlementEndDate AS [disabilityInformation.entitlementEndDate]
+    								,			DisabilityInformation.entitlementStartDate AS [disabilityInformation.entitlementStartDate]
+    								,			DisabilityInformation.entitlementType AS [disabilityInformation.entitlementType]
+    								,			DisabilityInformation.sicknessStartDate AS [disabilityInformation.sicknessStartDate]
+    								,			DisabilityInformation.startLimit AS [disabilityInformation.startLimit]
+    								,			DisabilityInformation.upperLimit AS [disabilityInformation.upperLimit]
+    								,			JSON_QUERY(( employment.JSON_Bericht )) AS [employmentDatas]
+    								,			sc.migrationDate AS [migrationDate]
+    								,			sc.numberOfRetirements AS [numberOfRetirements]
+    								,			sc.participationStartDate AS [participationStartDate]
+    								,			JSON_QUERY(( partnerTypeHistory.JSON_Bericht )) AS [partnerTypeHistory]
+    								,			JSON_QUERY(( policy.JSON_Bericht )) AS [policyDatas]
+    								,			sc.relationshipCoversSplit AS [relationshipCoversSplit]
+    								,			sc.retirementDate AS [retirementDate]
+    								,			sc.retirementFraction AS retirementFraction
+    								,			sc.sleeperDate AS sleeperDate
+    								,			JSON_QUERY(( Untraceable.JSON_Bericht )) AS [untraceables]
+    								,			sc.voluntaryContributionFraction AS voluntaryContributionFraction
+    								FROM			FL.Command AS sc
+    								LEFT JOIN		JSON.Employment AS employment
+    												ON employment.DX_FK_FL_Command_ID = sc.DX_ID
+    								LEFT JOIN		JSON.Policy AS policy
+    												ON policy.DX_FK_FL_Command_ID = sc.DX_ID
+    								LEFT JOIN		JSON.PartnerTypeHistory AS partnerTypeHistory
+    												ON partnerTypeHistory.DX_FK_FL_Command_ID = sc.DX_ID
+    								LEFT JOIN		FL.DisabilityInformation AS DisabilityInformation
+    												ON DisabilityInformation.DX_FK_FL_Command_ID = sc.DX_ID
+    								LEFT JOIN		JSON.Untraceable AS Untraceable
+    												ON Untraceable.DX_FK_FL_Command_ID = sc.DX_ID
+    								WHERE			sc.DX_ID = sc_.DX_ID
+    								FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
+    							)
+    			FROM	FL.Command AS sc_
+    		) jsonsel
+    """;
+
+var complexJsonResult = analyzer.Analyze(complexJsonQuery, new AnalysisOptions { IncludeInnerTables = false, DeduplicateResults = true });
+PrintResult(complexJsonResult);
+
 Console.ReadKey();
 
 static void PrintResult(QueryAnalysisResult result)

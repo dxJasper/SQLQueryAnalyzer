@@ -52,11 +52,11 @@ internal sealed class TableReferenceVisitor : TSqlConcreteFragmentVisitor
 
         _currentJoinType = node.QualifiedJoinType switch
         {
-            QualifiedJoinType.Inner => Models.JoinType.Inner,
-            QualifiedJoinType.LeftOuter => Models.JoinType.Left,
-            QualifiedJoinType.RightOuter => Models.JoinType.Right,
-            QualifiedJoinType.FullOuter => Models.JoinType.Full,
-            _ => Models.JoinType.Inner
+            QualifiedJoinType.Inner => JoinType.Inner,
+            QualifiedJoinType.LeftOuter => JoinType.Left,
+            QualifiedJoinType.RightOuter => JoinType.Right,
+            QualifiedJoinType.FullOuter => JoinType.Full,
+            _ => JoinType.Inner
         };
 
         node.SecondTableReference?.Accept(this);
@@ -68,7 +68,7 @@ internal sealed class TableReferenceVisitor : TSqlConcreteFragmentVisitor
     public override void Visit(UnqualifiedJoin node)
     {
         node.FirstTableReference?.Accept(this);
-        _currentJoinType = Models.JoinType.Cross;
+        _currentJoinType = JoinType.Cross;
         node.SecondTableReference?.Accept(this);
         _currentJoinType = null;
     }
