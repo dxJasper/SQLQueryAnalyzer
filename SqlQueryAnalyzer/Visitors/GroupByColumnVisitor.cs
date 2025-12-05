@@ -27,7 +27,6 @@ internal sealed class GroupByColumnVisitor : TSqlConcreteFragmentVisitor
             return;
         }
         
-        // Direct column reference
         if (node.Expression is ColumnReferenceExpression colRef)
         {
             var column = ExtractColumnReference(colRef);
@@ -39,7 +38,7 @@ internal sealed class GroupByColumnVisitor : TSqlConcreteFragmentVisitor
         else
         {
             // Expression in GROUP BY - extract all column references
-            var innerVisitor = new ExpressionColumnVisitor(ColumnUsageType.GroupBy);
+            var innerVisitor = new GroupByExpressionColumnVisitor();
             node.Expression.Accept(innerVisitor);
             Columns.AddRange(innerVisitor.Columns);
         }
@@ -47,7 +46,6 @@ internal sealed class GroupByColumnVisitor : TSqlConcreteFragmentVisitor
     
     public override void Visit(ColumnReferenceExpression node)
     {
-        // Only process if we're directly in a GROUP BY context and not already handled
         if (!_inGroupByClause)
         {
             base.Visit(node);
@@ -64,6 +62,7 @@ internal sealed class GroupByColumnVisitor : TSqlConcreteFragmentVisitor
             {
                 ColumnName = identifiers[0].Value,
                 UsageType = ColumnUsageType.GroupBy,
+                Kind = ColumnKind.Column,
                 StartLine = colRef.StartLine,
                 StartColumn = colRef.StartColumn
             },
@@ -72,6 +71,7 @@ internal sealed class GroupByColumnVisitor : TSqlConcreteFragmentVisitor
                 TableAlias = identifiers[0].Value,
                 ColumnName = identifiers[1].Value,
                 UsageType = ColumnUsageType.GroupBy,
+                Kind = ColumnKind.Column,
                 StartLine = colRef.StartLine,
                 StartColumn = colRef.StartColumn
             },
@@ -81,6 +81,7 @@ internal sealed class GroupByColumnVisitor : TSqlConcreteFragmentVisitor
                 TableName = identifiers[1].Value,
                 ColumnName = identifiers[2].Value,
                 UsageType = ColumnUsageType.GroupBy,
+                Kind = ColumnKind.Column,
                 StartLine = colRef.StartLine,
                 StartColumn = colRef.StartColumn
             },
@@ -90,11 +91,61 @@ internal sealed class GroupByColumnVisitor : TSqlConcreteFragmentVisitor
                 TableName = identifiers[2].Value,
                 ColumnName = identifiers[3].Value,
                 UsageType = ColumnUsageType.GroupBy,
+                Kind = ColumnKind.Column,
                 StartLine = colRef.StartLine,
                 StartColumn = colRef.StartColumn
             },
             _ => null
         };
+    }
+
+    private sealed class GroupByExpressionColumnVisitor : TSqlConcreteFragmentVisitor
+    {
+        public List<ColumnReference> Columns { get; } = [];
+        public override void Visit(ColumnReferenceExpression node)
+        {
+            var identifiers = node.MultiPartIdentifier?.Identifiers;
+            var column = identifiers?.Count switch
+            {
+                1 => new ColumnReference
+                {
+                    ColumnName = identifiers[0].Value,
+                    UsageType = ColumnUsageType.GroupBy,
+                    Kind = ColumnKind.Column,
+                    StartLine = node.StartLine,
+                    StartColumn = node.StartColumn
+                },
+                2 => new ColumnReference
+                {
+                    TableAlias = identifiers[0].Value,
+                    ColumnName = identifiers[1].Value,
+                    UsageType = ColumnUsageType.GroupBy,
+                    Kind = ColumnKind.Column,
+                    StartLine = node.StartLine,
+                    StartColumn = node.StartColumn
+                },
+                3 => new ColumnReference
+                {
+                    Schema = identifiers[0].Value,
+                    TableName = identifiers[1].Value,
+                    ColumnName = identifiers[2].Value,
+                    UsageType = ColumnUsageType.GroupBy,
+                    Kind = ColumnKind.Column,
+                    StartLine = node.StartLine,
+                    StartColumn = node.StartColumn
+                },
+                _ => new ColumnReference
+                {
+                    ColumnName = "[Unknown]",
+                    UsageType = ColumnUsageType.GroupBy,
+                    Kind = ColumnKind.Column,
+                    StartLine = node.StartLine,
+                    StartColumn = node.StartColumn
+                }
+            };
+            Columns.Add(column);
+            base.Visit(node);
+        }
     }
 
     // Prevent traversal into CTEs and subqueries - they're handled separately

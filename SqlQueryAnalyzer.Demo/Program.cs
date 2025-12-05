@@ -31,7 +31,7 @@ Console.WriteLine("YOUR EXAMPLE QUERY:");
 Console.WriteLine(new string('=', 80));
 
 var analyzer = new SqlQueryAnalyzerService();
-var result = analyzer.Analyze(sql);
+var result = analyzer.Analyze(sql, new AnalysisOptions { IncludeInnerTables = false, DeduplicateResults = true });
 
 PrintResult(result);
 
@@ -57,7 +57,7 @@ var groupOrderQuery = """
     ORDER BY total_value DESC, c.category_name ASC
     """;
 
-var groupOrderResult = analyzer.Analyze(groupOrderQuery);
+var groupOrderResult = analyzer.Analyze(groupOrderQuery, new AnalysisOptions { IncludeInnerTables = false, DeduplicateResults = true });
 PrintResult(groupOrderResult);
 
 // Test with CTE
@@ -89,7 +89,7 @@ var cteQuery = """
     ORDER BY ro.order_count DESC
     """;
 
-var cteResult = analyzer.Analyze(cteQuery);
+var cteResult = analyzer.Analyze(cteQuery, new AnalysisOptions { IncludeInnerTables = false, DeduplicateResults = true });
 PrintResult(cteResult);
 
 // Test with subquery
@@ -115,8 +115,10 @@ var subqueryQuery = """
     )
     """;
 
-var subqueryResult = analyzer.Analyze(subqueryQuery);
+var subqueryResult = analyzer.Analyze(subqueryQuery, new AnalysisOptions { IncludeInnerTables = false, DeduplicateResults = true });
 PrintResult(subqueryResult);
+
+Console.ReadKey();
 
 static void PrintResult(QueryAnalysisResult result)
 {
@@ -277,12 +279,12 @@ static void PrintResult(QueryAnalysisResult result)
                 TransformationType.WindowFunction => "WINDOW",
                 _ => "UNKNOWN"
             };
-            
+
             if (lineage.SourceColumns.Count > 0)
             {
-                var sources = string.Join(" + ", lineage.SourceColumns.Select(s => 
-                    string.IsNullOrEmpty(s.TableAlias) && string.IsNullOrEmpty(s.TableName) 
-                        ? s.ColumnName 
+                var sources = string.Join(" + ", lineage.SourceColumns.Select(s =>
+                    string.IsNullOrEmpty(s.TableAlias) && string.IsNullOrEmpty(s.TableName)
+                        ? s.ColumnName
                         : $"{s.TableAlias ?? s.TableName}.{s.ColumnName}"));
                 Console.WriteLine($"   • {output} ← [{transformLabel}] {sources}");
             }

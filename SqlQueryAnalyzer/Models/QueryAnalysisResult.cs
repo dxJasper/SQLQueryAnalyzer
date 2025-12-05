@@ -52,6 +52,12 @@ public sealed class QueryTableReference
     public JoinType? JoinType { get; init; }
     public int StartLine { get; init; }
     public int StartColumn { get; init; }
+    public bool DirectReference { get; init; } // true when referenced in top-level query
+
+    // New: columns used against this table grouped by usage
+    public List<ColumnReference> SelectColumns { get; init; } = [];
+    public List<ColumnReference> JoinColumns { get; init; } = [];
+    public List<ColumnReference> PredicateColumns { get; init; } = [];
 
     public string FullName => string.Join(".",
         new[] { Database, Schema, TableName }.Where(s => !string.IsNullOrEmpty(s)));
@@ -98,6 +104,7 @@ public sealed class ColumnReference
     public bool IsAscending { get; init; } = true;
     public int StartLine { get; init; }
     public int StartColumn { get; init; }
+    public ColumnKind Kind { get; init; } = ColumnKind.Column;
 
     /// <summary>
     /// The table/alias this column is associated with
@@ -122,6 +129,17 @@ public enum ColumnUsageType
     CaseWhen,
     Function,
     Subquery
+}
+
+public enum ColumnKind
+{
+    Column,
+    Expression,
+    Function,
+    Aggregate,
+    Literal,
+    Subquery,
+    Star
 }
 
 /// <summary>

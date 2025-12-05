@@ -10,6 +10,7 @@ internal sealed class ColumnLineageBuilder : TSqlConcreteFragmentVisitor
 {
     private readonly List<QueryTableReference> _tables;
     private readonly Dictionary<string, QueryTableReference> _tableByAlias;
+    private int _cteDepth;
 
     public List<ColumnLineage> Lineages { get; } = [];
 
@@ -22,8 +23,27 @@ internal sealed class ColumnLineageBuilder : TSqlConcreteFragmentVisitor
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
     }
 
+    public override void Visit(WithCtesAndXmlNamespaces node)
+    {
+        // Track CTE region but let normal traversal work
+        _cteDepth++;
+        base.Visit(node);
+        _cteDepth--;
+    }
+
+    public override void Visit(CommonTableExpression node)
+    {
+        // Skip CTE definitions completely 
+        // Do NOT call base.Visit(node)
+    }
+
     public override void Visit(SelectScalarExpression node)
     {
+        if (_cteDepth > 0)
+        {
+            return; // Skip if inside CTE
+        }
+
         var outputAlias = node.ColumnName?.Value;
         var lineage = new ColumnLineage
         {
@@ -44,6 +64,11 @@ internal sealed class ColumnLineageBuilder : TSqlConcreteFragmentVisitor
 
     public override void Visit(SelectStarExpression node)
     {
+        if (_cteDepth > 0)
+        {
+            return; // Skip if inside CTE
+        }
+
         var tableAlias = node.Qualifier?.Identifiers.LastOrDefault()?.Value;
 
         if (tableAlias is not null && _tableByAlias.TryGetValue(tableAlias, out var table))
@@ -131,12 +156,6 @@ internal sealed class ColumnLineageBuilder : TSqlConcreteFragmentVisitor
             "STRING_AGG" or "APPROX_COUNT_DISTINCT" => true,
             _ => false
         };
-
-    // Prevent traversal into CTEs and subqueries - they're handled separately
-    public override void Visit(CommonTableExpression node)
-    {
-        // Don't traverse into CTEs
-    }
 
     public override void Visit(ScalarSubquery node)
     {
