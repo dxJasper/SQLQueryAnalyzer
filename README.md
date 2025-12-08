@@ -1,4 +1,4 @@
-# SqlQueryAnalyzer
+# DXMS.SqlQueryAnalyzer
 
 A .NET library for analyzing T-SQL queries and extracting structural information including tables, columns, CTEs, subqueries, and column lineage.
 
@@ -14,24 +14,27 @@ A .NET library for analyzing T-SQL queries and extracting structural information
 - **Batch Processing**: Analyzes multiple SQL statements in a single batch
 - **Syntax Validation**: Validates SQL syntax without full analysis
 
-## Requirements
+## Visit pattern explained
 
-- .NET 9.0 or later
-- Microsoft.SqlServer.TransactSql.ScriptDom 170.128.0
+- The parser turns SQL into an AST (TSqlFragment). Visitors are small classes inheriting TSqlConcreteFragmentVisitor that traverse this AST.
 
-## Installation
+- Each visitor overrides Visit methods for node types it cares about (e.g., SelectScalarExpression, ColumnReferenceExpression) and collects data into lists (Tables, Columns, etc.).
 
-Add the project reference or install via NuGet (when published):
+- Traversal is initiated by calling fragment.Accept(visitor). The base visitor handles walking children; your overrides add logic and optionally skip parts.
 
-```bash
-dotnet add reference SqlQueryAnalyzer.csproj
-```
+- Separation of concerns: different visitors focus on specific domains (tables, select columns, joins, group by, subqueries, final query columns, lineage). The service orchestrates them in sequence.
+
+- State tracking: visitors keep flags or counters (e.g., _inWhere, _inHaving, _subqueryDepth, _cteDepth) to control context-sensitive collection and avoid inner scopes like CTEs/subqueries.
+
+- Extraction helpers: factories like ColumnReferenceFactory centralize building model objects; utilities like SqlQueryAnalyzerService.GetFragmentText get raw SQL for expressions.
+
+- Result assembly: after all Accept calls, SqlQueryAnalyzerService merges visitor outputs into QueryAnalysisResult and deduplicates with custom comparers.
 
 ## Quick Start
 
 ```csharp
-using SqlQueryAnalyzer;
-using SqlQueryAnalyzer.Models;
+using DXMS.SqlQueryAnalyzer;
+using DXMS.SqlQueryAnalyzer.Models;
 
 // Create the analyzer (defaults to SQL Server 2022 syntax)
 var analyzer = new SqlQueryAnalyzerService();
@@ -158,56 +161,3 @@ Register with your DI container using the interface:
 services.AddSingleton<ISqlQueryAnalyzerService>(
     new SqlQueryAnalyzerService(SqlServerVersion.Sql160));
 ```
-
-## SQL Server Version Support
-
-Supported SQL Server versions:
-
-| Version | Enum Value | SQL Server Release |
-|---------|------------|-------------------|
-| SQL Server 2008 | `Sql100` | 10.0 |
-| SQL Server 2012 | `Sql110` | 11.0 |
-| SQL Server 2014 | `Sql120` | 12.0 |
-| SQL Server 2016 | `Sql130` | 13.0 |
-| SQL Server 2017 | `Sql140` | 14.0 |
-| SQL Server 2019 | `Sql150` | 15.0 |
-| SQL Server 2022 | `Sql160` | 16.0 (default) |
-
-## Project Structure
-
-```
-SqlQueryAnalyzer/
-├── SqlQueryAnalyzer/
-│   ├── ISqlQueryAnalyzerService.cs    # Service interface
-│   ├── SqlQueryAnalyzerService.cs     # Main analyzer implementation
-│   ├── AnalysisOptions.cs             # Configuration options
-│   ├── Models/
-│   │   └── QueryAnalysisResult.cs     # Result models
-│   ├── Visitors/
-│   │   ├── ColumnReferenceFactory.cs  # Shared column extraction
-│   │   ├── TableReferenceVisitor.cs   # Table extraction
-│   │   ├── SelectColumnVisitor.cs     # SELECT column extraction
-│   │   ├── PredicateColumnVisitor.cs  # WHERE column extraction
-│   │   ├── JoinColumnVisitor.cs       # JOIN column extraction
-│   │   ├── GroupByColumnVisitor.cs    # GROUP BY extraction
-│   │   ├── OrderByColumnVisitor.cs    # ORDER BY extraction
-│   │   ├── CteVisitor.cs              # CTE extraction
-│   │   ├── SubQueryVisitor.cs         # Subquery extraction
-│   │   ├── ColumnLineageBuilder.cs    # Lineage tracking
-│   │   └── FinalQueryColumnVisitor.cs # Final output columns
-│   └── Comparers/
-│       └── EqualityComparers.cs       # Deduplication comparers
-├── SqlQueryAnalyzer.Demo/             # Demo console application
-└── SqlQueryAnalyzer.Tests/            # Unit tests (TUnit)
-```
-
-## Running Tests
-
-```bash
-cd SqlQueryAnalyzer.Tests
-dotnet test
-```
-
-## License
-
-MIT License - see LICENSE file for details.

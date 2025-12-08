@@ -51,23 +51,32 @@ internal sealed class CompositeColumnVisitor : TSqlConcreteFragmentVisitor
     // SELECT list
     public override void Visit(SelectScalarExpression node)
     {
-        if (_subqueryDepth > 0) return;
+        if (_subqueryDepth > 0)
+        {
+            return;
+        }
+
         var alias = node.ColumnName?.Value;
+
         if (node.Expression is ColumnReferenceExpression colRef)
         {
             var column = ColumnReferenceFactory.Create(colRef, alias, ColumnUsageType.Select);
             SelectColumns.Add(column);
             return;
         }
-        ColumnReference? baseCol = null;
+
+        ColumnReference? baseColumn = null;
         var innerVisitor = new ExpressionColumnVisitor(ColumnUsageType.Select);
         node.Expression.Accept(innerVisitor);
+
         if (innerVisitor.Columns.Count > 0)
         {
-            baseCol = innerVisitor.Columns[0];
+            baseColumn = innerVisitor.Columns[0];
         }
-        var exprCol = ColumnReferenceFactory.CreateExpression(node.Expression, alias, ColumnUsageType.Select, baseCol);
-        SelectColumns.Add(exprCol);
+
+        var columnReference = ColumnReferenceFactory.CreateExpression(node.Expression, alias, ColumnUsageType.Select, baseColumn);
+
+        SelectColumns.Add(columnReference);
     }
 
     public override void Visit(SelectStarExpression node)
@@ -96,8 +105,8 @@ internal sealed class CompositeColumnVisitor : TSqlConcreteFragmentVisitor
         // Join ON condition columns
         if (_inJoinCondition)
         {
-            var joinCol = ColumnReferenceFactory.Create(node, alias: null, ColumnUsageType.Join);
-            JoinColumns.Add(joinCol);
+            var joinColumn = ColumnReferenceFactory.Create(node, alias: null, ColumnUsageType.Join);
+            JoinColumns.Add(joinColumn);
             base.Visit(node);
             return;
         }
@@ -106,19 +115,19 @@ internal sealed class CompositeColumnVisitor : TSqlConcreteFragmentVisitor
         if ((_inWhere || _inHaving) && _subqueryDepth == 0)
         {
             var usage = _inHaving ? ColumnUsageType.Having : ColumnUsageType.Where;
-            var predCol = ColumnReferenceFactory.Create(node, alias: null, usage);
-            PredicateColumns.Add(predCol);
+            var predicateColumn = ColumnReferenceFactory.Create(node, alias: null, usage);
+            PredicateColumns.Add(predicateColumn);
+
             base.Visit(node);
+
             return;
         }
 
         // GroupBy columns (handled via grouping specs)
         if (_inGroupBy && _cteDepth == 0 && _subqueryDepth == 0)
         {
-            var grpCol = ColumnReferenceFactory.Create(node, alias: null, ColumnUsageType.GroupBy);
-            GroupByColumns.Add(grpCol);
-            base.Visit(node);
-            return;
+            var groupColumn = ColumnReferenceFactory.Create(node, alias: null, ColumnUsageType.GroupBy);
+            GroupByColumns.Add(groupColumn);
         }
 
         base.Visit(node);
