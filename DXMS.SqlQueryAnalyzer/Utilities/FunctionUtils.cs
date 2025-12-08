@@ -22,4 +22,15 @@ internal static class FunctionUtils
     {
         return name is not null && Aggregates.Contains(name);
     }
+
+    // Determines the ColumnKind based on the expression type.
+    public static ColumnKind DetermineKind(ScalarExpression expr) => expr switch
+    {
+        FunctionCall func when IsAggregate(func) => ColumnKind.Aggregate,
+        FunctionCall => ColumnKind.Function,
+        CaseExpression or BinaryExpression or UnaryExpression => ColumnKind.Expression,
+        StringLiteral or IntegerLiteral or NumericLiteral or NullLiteral => ColumnKind.Literal,
+        ScalarSubquery => ColumnKind.Subquery,
+        _ => ColumnKind.Expression
+    };
 }

@@ -120,7 +120,7 @@ internal sealed class FinalQueryColumnVisitor : TSqlConcreteFragmentVisitor
             Alias = alias,
             Expression = expressionText,
             UsageType = ColumnUsageType.Select,
-            Kind = DetermineKind(node.Expression),
+            Kind = FunctionUtils.DetermineKind(node.Expression),
             StartLine = node.StartLine,
             StartColumn = node.StartColumn
         };
@@ -267,19 +267,4 @@ internal sealed class FinalQueryColumnVisitor : TSqlConcreteFragmentVisitor
         // Don't traverse into subqueries within expressions
         public override void Visit(ScalarSubquery node) { }
     }
-
-    private static ColumnKind DetermineKind(ScalarExpression expr) => expr switch
-    {
-        FunctionCall func when FunctionUtils.IsAggregate(func) => ColumnKind.Aggregate,
-        FunctionCall => ColumnKind.Function,
-        CaseExpression => ColumnKind.Expression,
-        BinaryExpression => ColumnKind.Expression,
-        UnaryExpression => ColumnKind.Expression,
-        StringLiteral => ColumnKind.Literal,
-        IntegerLiteral => ColumnKind.Literal,
-        NumericLiteral => ColumnKind.Literal,
-        NullLiteral => ColumnKind.Literal,
-        ScalarSubquery => ColumnKind.Subquery,
-        _ => ColumnKind.Expression
-    };
 }
