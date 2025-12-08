@@ -144,15 +144,15 @@ public class IntegrationTests
 
         // Verify we have CTEs
         await Assert.That(result.CommonTableExpressions.Count).IsEqualTo(2);
-        await Assert.That(result.CommonTableExpressions.Any(c => c.Name == "ActiveCustomers")).IsTrue();
-        await Assert.That(result.CommonTableExpressions.Any(c => c.Name == "RecentOrders")).IsTrue();
+        await Assert.That(result.CommonTableExpressions).Contains(c => c.Name == "ActiveCustomers");
+        await Assert.That(result.CommonTableExpressions).Contains(c => c.Name == "RecentOrders");
 
         // Verify the final query columns are the expected ones
-        await Assert.That(result.FinalQueryColumns.Any(c => c.TableAlias == "ac" && c.ColumnName == "customer_id")).IsTrue();
-        await Assert.That(result.FinalQueryColumns.Any(c => c.TableAlias == "ac" && c.ColumnName == "name")).IsTrue();
-        await Assert.That(result.FinalQueryColumns.Any(c => c.TableAlias == "ac" && c.ColumnName == "email")).IsTrue();
-        await Assert.That(result.FinalQueryColumns.Any(c => c.TableAlias == "ro" && c.ColumnName == "order_count")).IsTrue();
-        await Assert.That(result.FinalQueryColumns.Any(c => c.TableAlias == "ro" && c.ColumnName == "last_order")).IsTrue();
+        await Assert.That(result.FinalQueryColumns).Contains(reference => reference is { TableAlias: "ac", ColumnName: "customer_id" });
+        await Assert.That(result.FinalQueryColumns).Contains(reference => reference is { TableAlias: "ac", ColumnName: "name" });
+        await Assert.That(result.FinalQueryColumns).Contains(reference => reference is { TableAlias: "ac", ColumnName: "email" });
+        await Assert.That(result.FinalQueryColumns).Contains(reference => reference is { TableAlias: "ro", ColumnName: "order_count" });
+        await Assert.That(result.FinalQueryColumns).Contains(reference => reference is { TableAlias: "ro", ColumnName: "last_order" });
     }
 
     [Test]
@@ -193,9 +193,9 @@ public class IntegrationTests
         await Assert.That(result.SubQueries.Count).IsGreaterThanOrEqualTo(3);
 
         // Verify the final query columns are the expected ones
-        await Assert.That(result.FinalQueryColumns.Any(c => c.TableAlias == "p" && c.ColumnName == "product_id")).IsTrue();
-        await Assert.That(result.FinalQueryColumns.Any(c => c.TableAlias == "p" && c.ColumnName == "name")).IsTrue();
-        await Assert.That(result.FinalQueryColumns.Any(c => c.Alias == "avg_price")).IsTrue();
+        await Assert.That(result.FinalQueryColumns).Contains(reference => reference is { TableAlias: "p", ColumnName: "product_id" });
+        await Assert.That(result.FinalQueryColumns).Contains(reference => reference is { TableAlias: "p", ColumnName: "name" });
+        await Assert.That(result.FinalQueryColumns).Contains(reference => reference.Alias == "avg_price");
     }
 
     [Test]
@@ -498,10 +498,6 @@ public class IntegrationTests
             								,			DisabilityInformation.continuationPercentage AS [disabilityInformation.continuationPercentage]
             								,			DisabilityInformation.continuationPercentageForAop AS [disabilityInformation.continuationPercentageForAop]
             								,			DisabilityInformation.countValueForKapCover AS [disabilityInformation.countValueForKapCover]
-            								,			DisabilityInformation.disabilityClassType AS [disabilityInformation.disabilityClassType]
-            								,			DisabilityInformation.disabilityFraction AS [disabilityInformation.disabilityFraction]
-            								,			DisabilityInformation.disabilityType AS [disabilityInformation.disabilityType]
-            								,			DisabilityInformation.entitlementEndDate AS [disabilityInformation.entitlementEndDate]
             								,			DisabilityInformation.dailyWageUncappedAmount AS [disabilityInformation.dailyWageUncappedAmount]
             								,			DisabilityInformation.disabilityClassType AS [disabilityInformation.disabilityClassType]
             								,			DisabilityInformation.disabilityFraction AS [disabilityInformation.disabilityFraction]
@@ -548,10 +544,10 @@ public class IntegrationTests
         // CRITICAL: This query should have exactly 2 FinalQueryColumns as expected
         // The FinalQueryColumnVisitor correctly identifies only the outer SELECT columns
         await Assert.That(result.FinalQueryColumns.Count).IsEqualTo(2);
-        
+
         // Should have even more SelectColumns due to the deeply nested JSON query structure  
         await Assert.That(result.SelectColumns.Count).IsGreaterThanOrEqualTo(result.FinalQueryColumns.Count);
-        
+
         // The main output columns should be present among the detected columns
         var outputColumns = result.FinalQueryColumns.Select(c => c.Alias ?? c.ColumnName).ToList();
         await Assert.That(outputColumns.Contains("DX_ID")).IsTrue();
@@ -559,13 +555,13 @@ public class IntegrationTests
 
         // Verify we have tables from multiple schemas and nesting levels
         await Assert.That(result.Tables.Count).IsGreaterThanOrEqualTo(8);
-        
+
         // Verify schemas are detected from multiple levels
         await Assert.That(result.Schemas.Contains("JSON")).IsTrue();
         await Assert.That(result.Schemas.Contains("FL")).IsTrue();
 
         // Verify derived table is detected
-        await Assert.That(result.Tables.Any(t => t.Alias == "jsonsel" && t.Type == TableReferenceType.DerivedTable)).IsTrue();
+        await Assert.That(result.Tables).Contains(reference => reference is { Alias: "jsonsel", Type: TableReferenceType.DerivedTable });
 
         // Verify column lineages are created (should match the number of detected columns)
         await Assert.That(result.ColumnLineages.Count).IsGreaterThan(0);

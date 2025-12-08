@@ -1,8 +1,4 @@
-using SqlQueryAnalyzer;
 using SqlQueryAnalyzer.Models;
-using TUnit.Assertions;
-using TUnit.Assertions.Extensions;
-using TUnit.Core;
 
 namespace SqlQueryAnalyzer.Tests;
 
@@ -33,16 +29,16 @@ public class ComplexQueriesTests
         var result = _analyzer.Analyze(sql, Options);
         await Assert.That(result.HasErrors).IsFalse();
 
-        await Assert.That(result.Tables.Any(t => t.TableName == "Products" && t.Alias == "p")).IsTrue();
-        await Assert.That(result.Tables.Any(t => t.TableName == "Categories" && t.Alias == "c")).IsTrue();
-        await Assert.That(result.Tables.Any(t => t.TableName == "Suppliers" && t.Alias == "s")).IsTrue();
+        await Assert.That(result.Tables).Contains(reference => reference is { TableName: "Products", Alias: "p" });
+        await Assert.That(result.Tables).Contains(reference => reference is { TableName: "Categories", Alias: "c" });
+        await Assert.That(result.Tables).Contains(reference => reference is { TableName: "Suppliers", Alias: "s" });
 
-        await Assert.That(result.SelectColumns.Any(c => c.ColumnName == "category_name" && c.TableAlias == "c")).IsTrue();
-        await Assert.That(result.SelectColumns.Any(c => c.ColumnName == "supplier_id" && c.TableAlias == "p")).IsTrue();
-        await Assert.That(result.SelectColumns.Any(c => c.Alias == "product_count")).IsTrue();
-        await Assert.That(result.OrderByColumns.Any(c => c.ColumnName == "total_value" && !c.IsAscending)).IsTrue();
+        await Assert.That(result.SelectColumns).Contains(columnReference => columnReference is { ColumnName: "category_name", TableAlias: "c" });
+        await Assert.That(result.SelectColumns).Contains(columnReference => columnReference is { ColumnName: "supplier_id", TableAlias: "p" });
+        await Assert.That(result.SelectColumns).Contains(columnReference => columnReference.Alias == "product_count");
+        await Assert.That(result.OrderByColumns).Contains(columnReference => columnReference is { ColumnName: "total_value", IsAscending: false });
 
-        await Assert.That(result.ColumnLineages.Any(l => (l.OutputAlias ?? l.OutputColumn) == "avg_price" && l.Transformation == TransformationType.Aggregate)).IsTrue();
+        await Assert.That(result.ColumnLineages).Contains(lineage => (lineage.OutputAlias ?? lineage.OutputColumn) == "avg_price" && lineage.Transformation == TransformationType.Aggregate);
     }
 
     [Test]
@@ -75,13 +71,13 @@ public class ComplexQueriesTests
         var result = _analyzer.Analyze(sql, Options);
         await Assert.That(result.HasErrors).IsFalse();
 
-        await Assert.That(result.Tables.Any(t => t.Type == TableReferenceType.Cte && t.TableName == "ActiveCustomers")).IsTrue();
-        await Assert.That(result.Tables.Any(t => t.Type == TableReferenceType.Cte && t.TableName == "RecentOrders")).IsTrue();
+        await Assert.That(result.Tables).Contains(t => t is { Type: TableReferenceType.Cte, TableName: "ActiveCustomers" });
+        await Assert.That(result.Tables).Contains(t => t is { Type: TableReferenceType.Cte, TableName: "RecentOrders" });
 
-        await Assert.That(result.SelectColumns.Any(c => c.TableAlias == "ac" && c.ColumnName == "customer_id")).IsTrue();
-        await Assert.That(result.SelectColumns.Any(c => c.TableAlias == "ro" && c.ColumnName == "order_count")).IsTrue();
+        await Assert.That(result.SelectColumns).Contains(c => c is { TableAlias: "ac", ColumnName: "customer_id" });
+        await Assert.That(result.SelectColumns).Contains(c => c is { TableAlias: "ro", ColumnName: "order_count" });
 
-        await Assert.That(result.ColumnLineages.Any(l => (l.OutputAlias ?? l.OutputColumn) == "last_order")).IsTrue();
+        await Assert.That(result.ColumnLineages).Contains(l => (l.OutputAlias ?? l.OutputColumn) == "last_order");
     }
 
     [Test]
@@ -108,12 +104,12 @@ public class ComplexQueriesTests
         var result = _analyzer.Analyze(sql, Options);
         await Assert.That(result.HasErrors).IsFalse();
 
-        await Assert.That(result.Tables.Any(t => t.TableName == "Products" && t.Alias == "p")).IsTrue();
-        await Assert.That(result.SubQueries.Any(s => s.Type == SubQueryType.ScalarSubquery)).IsTrue();
-        await Assert.That(result.SubQueries.Any(s => s.Type == SubQueryType.InSubquery)).IsTrue();
-        await Assert.That(result.SubQueries.Any(s => s.Type == SubQueryType.ExistsSubquery)).IsTrue();
+        await Assert.That(result.Tables).Contains(reference => reference is { TableName: "Products", Alias: "p" });
+        await Assert.That(result.SubQueries).Contains(info => info.Type == SubQueryType.ScalarSubquery);
+        await Assert.That(result.SubQueries).Contains(info => info.Type == SubQueryType.InSubquery);
+        await Assert.That(result.SubQueries).Contains(info => info.Type == SubQueryType.ExistsSubquery);
 
-        await Assert.That(result.ColumnLineages.Any(l => (l.OutputAlias ?? l.OutputColumn) == "avg_price" && l.Transformation == TransformationType.Subquery)).IsTrue();
+        await Assert.That(result.ColumnLineages).Contains(lineage => (lineage.OutputAlias ?? lineage.OutputColumn) == "avg_price" && lineage.Transformation == TransformationType.Subquery);
     }
 
     [Test]
@@ -132,13 +128,13 @@ public class ComplexQueriesTests
         var result = _analyzer.Analyze(sql, Options);
         await Assert.That(result.HasErrors).IsFalse();
 
-        await Assert.That(result.SelectColumns.Any(c => c.Alias == "amount_group")).IsTrue();
-        await Assert.That(result.SelectColumns.Any(c => c.Alias == "total_amount")).IsTrue();
-        await Assert.That(result.SelectColumns.Any(c => c.Alias == "cnt")).IsTrue();
+        await Assert.That(result.SelectColumns).Contains(reference => reference.Alias == "amount_group");
+        await Assert.That(result.SelectColumns).Contains(reference => reference.Alias == "total_amount");
+        await Assert.That(result.SelectColumns).Contains(reference => reference.Alias == "cnt");
 
-        await Assert.That(result.ColumnLineages.Any(l => (l.OutputAlias ?? l.OutputColumn) == "amount_group" && l.Transformation == TransformationType.Case)).IsTrue();
-        await Assert.That(result.ColumnLineages.Any(l => (l.OutputAlias ?? l.OutputColumn) == "total_amount" && l.Transformation == TransformationType.Aggregate)).IsTrue();
-        await Assert.That(result.ColumnLineages.Any(l => (l.OutputAlias ?? l.OutputColumn) == "cnt" && l.Transformation == TransformationType.Aggregate)).IsTrue();
+        await Assert.That(result.ColumnLineages).Contains(lineage => (lineage.OutputAlias ?? lineage.OutputColumn) == "amount_group" && lineage.Transformation == TransformationType.Case);
+        await Assert.That(result.ColumnLineages).Contains(lineage => (lineage.OutputAlias ?? lineage.OutputColumn) == "total_amount" && lineage.Transformation == TransformationType.Aggregate);
+        await Assert.That(result.ColumnLineages).Contains(lineage => (lineage.OutputAlias ?? lineage.OutputColumn) == "cnt" && lineage.Transformation == TransformationType.Aggregate);
     }
 
     [Test]
@@ -157,14 +153,14 @@ public class ComplexQueriesTests
         // Test without deduplication first
         var resultNoDedup = _analyzer.Analyze(sql, new AnalysisOptions { DeduplicateResults = false });
         await Assert.That(resultNoDedup.HasErrors).IsFalse();
-        
+
         // Test with deduplication
         var result = _analyzer.Analyze(sql, Options);
         await Assert.That(result.HasErrors).IsFalse();
 
         await Assert.That(result.GroupByColumns.Count).IsGreaterThanOrEqualTo(2);
-        await Assert.That(result.GroupByColumns.Any(c => c.TableAlias == "c" && c.ColumnName == "category_name")).IsTrue();
-        await Assert.That(result.GroupByColumns.Any(c => c.TableAlias == "p" && c.ColumnName == "supplier_id")).IsTrue();
+        await Assert.That(result.GroupByColumns).Contains(reference => reference is { TableAlias: "c", ColumnName: "category_name" });
+        await Assert.That(result.GroupByColumns).Contains(reference => reference is { TableAlias: "p", ColumnName: "supplier_id" });
     }
 
     [Test]
@@ -217,39 +213,39 @@ public class ComplexQueriesTests
         await Assert.That(result.HasErrors).IsFalse();
 
         // Test UNPIVOT table detection
-        await Assert.That(result.Tables.Any(t => t.TableName == "CalculatedPostingAmount" && t.Alias == "CPA")).IsTrue();
-        
+        await Assert.That(result.Tables).Contains(reference => reference is { TableName: "CalculatedPostingAmount", Alias: "CPA" });
+
         // Test JOIN detection with complex conditions
-        await Assert.That(result.Tables.Any(t => t.TableName == "AccountAndPostingType" && t.Alias == "AAPT" && t.JoinType == JoinType.Left)).IsTrue();
-        
+        await Assert.That(result.Tables).Contains(reference => reference is { TableName: "AccountAndPostingType", Alias: "AAPT", JoinType: JoinType.Left });
+
         // Test CROSS APPLY detection (should be treated as a derived table)
-        await Assert.That(result.Tables.Any(t => t.Alias == "peildatum")).IsTrue();
-        
+        await Assert.That(result.Tables).Contains(reference => reference.Alias == "peildatum");
+
         // Test variable declaration subquery table detection
-        await Assert.That(result.Tables.Any(t => t.TableName == "Variable" && t.Alias == "v")).IsTrue();
-        
+        await Assert.That(result.Tables).Contains(reference => reference is { TableName: "Variable", Alias: "v" });
+
         // Test column analysis - should have 6 output columns
         await Assert.That(result.FinalQueryColumns.Count).IsGreaterThanOrEqualTo(6);
-        
+
         // Test that UNPIVOT columns are properly handled
-        await Assert.That(result.FinalQueryColumns.Any(c => c.TableAlias == "up" && c.ColumnName == "col")).IsTrue();
-        await Assert.That(result.FinalQueryColumns.Any(c => c.TableAlias == "up" && c.ColumnName == "value")).IsTrue();
-        
+        await Assert.That(result.FinalQueryColumns).Contains(reference => reference is { TableAlias: "up", ColumnName: "col" });
+        await Assert.That(result.FinalQueryColumns).Contains(reference => reference is { TableAlias: "up", ColumnName: "value" });
+
         // Test alias detection
-        await Assert.That(result.FinalQueryColumns.Any(c => c.Alias == "assettype")).IsTrue();
-        await Assert.That(result.FinalQueryColumns.Any(c => c.Alias == "amount")).IsTrue();
-        
+        await Assert.That(result.FinalQueryColumns).Contains(reference => reference.Alias == "assettype");
+        await Assert.That(result.FinalQueryColumns).Contains(reference => reference.Alias == "amount");
+
         // Test schema detection from multiple schemas
         var schemas = result.Schemas.ToList();
         await Assert.That(schemas.Contains("AFL")).IsTrue();
         await Assert.That(schemas.Contains("VRT")).IsTrue();
         await Assert.That(schemas.Contains("DCA")).IsTrue();
         await Assert.That(schemas.Contains("DK")).IsTrue();
-        
+
         // Test JOIN column detection
         await Assert.That(result.JoinColumns.Count).IsGreaterThanOrEqualTo(2);
-        await Assert.That(result.JoinColumns.Any(c => c.TableAlias == "AAPT" && c.ColumnName == "vermogensOnderdeel")).IsTrue();
-        await Assert.That(result.JoinColumns.Any(c => c.TableAlias == "up" && c.ColumnName == "col")).IsTrue();
+        await Assert.That(result.JoinColumns).Contains(reference => reference is { TableAlias: "AAPT", ColumnName: "vermogensOnderdeel" });
+        await Assert.That(result.JoinColumns).Contains(reference => reference is { TableAlias: "up", ColumnName: "col" });
     }
 
     [Test]
@@ -320,26 +316,26 @@ public class ComplexQueriesTests
 
         // CRITICAL: This query should have exactly 2 FinalQueryColumns as specified
         await Assert.That(result.FinalQueryColumns.Count).IsEqualTo(2);
-        
+
         // Verify the specific 2 output columns
-        await Assert.That(result.FinalQueryColumns.Any(c => c.TableAlias == "jsonsel" && c.ColumnName == "DX_ID")).IsTrue();
-        await Assert.That(result.FinalQueryColumns.Any(c => c.Alias == "JSON_BERICHT_Compressed")).IsTrue();
+        await Assert.That(result.FinalQueryColumns).Contains(reference => reference is { TableAlias: "jsonsel", ColumnName: "DX_ID" });
+        await Assert.That(result.FinalQueryColumns).Contains(reference => reference.Alias == "JSON_BERICHT_Compressed");
 
         // Note: INSERT INTO targets may not be detected as tables by the current visitors
         // This is not a critical issue for the FinalQueryColumns functionality
 
         // Verify the derived table (subquery) is detected
-        await Assert.That(result.Tables.Any(t => t.Alias == "jsonsel" && t.Type == TableReferenceType.DerivedTable)).IsTrue();
+        await Assert.That(result.Tables).Contains(reference => reference is { Alias: "jsonsel", Type: TableReferenceType.DerivedTable });
 
         // Verify main tables from the complex nested query are detected
-        await Assert.That(result.Tables.Any(t => t.FullName == "FL.Command" && t.Alias == "sc")).IsTrue();
-        
+        await Assert.That(result.Tables).Contains(reference => reference is { FullName: "FL.Command", Alias: "sc" });
+
         // Verify JSON-related tables are detected
-        await Assert.That(result.Tables.Any(t => t.FullName == "JSON.Employment" && t.Alias == "employment")).IsTrue();
-        await Assert.That(result.Tables.Any(t => t.FullName == "JSON.Policy" && t.Alias == "policy")).IsTrue();
-        await Assert.That(result.Tables.Any(t => t.FullName == "JSON.PartnerTypeHistory" && t.Alias == "partnerTypeHistory")).IsTrue();
-        await Assert.That(result.Tables.Any(t => t.FullName == "JSON.Untraceable" && t.Alias == "Untraceable")).IsTrue();
-        await Assert.That(result.Tables.Any(t => t.FullName == "FL.DisabilityInformation" && t.Alias == "DisabilityInformation")).IsTrue();
+        await Assert.That(result.Tables).Contains(reference => reference is { FullName: "JSON.Employment", Alias: "employment" });
+        await Assert.That(result.Tables).Contains(reference => reference is { FullName: "JSON.Policy", Alias: "policy" });
+        await Assert.That(result.Tables).Contains(reference => reference is { FullName: "JSON.PartnerTypeHistory", Alias: "partnerTypeHistory" });
+        await Assert.That(result.Tables).Contains(reference => reference is { FullName: "JSON.Untraceable", Alias: "Untraceable" });
+        await Assert.That(result.Tables).Contains(reference => reference is { FullName: "FL.DisabilityInformation", Alias: "DisabilityInformation" });
 
         // Verify schemas from multiple levels are detected
         var schemas = result.Schemas.ToList();
@@ -348,16 +344,16 @@ public class ComplexQueriesTests
 
         // Verify we have many SelectColumns due to the nested complex query
         await Assert.That(result.SelectColumns.Count).IsGreaterThan(20);
-        
+
         // Verify the key distinction: FinalQueryColumns should be much less than SelectColumns
         await Assert.That(result.FinalQueryColumns.Count).IsLessThan(result.SelectColumns.Count);
 
         // Verify JOIN columns from the complex nested structure
         await Assert.That(result.JoinColumns.Count).IsGreaterThanOrEqualTo(5);
-        
+
         // Verify some specific JOIN conditions are detected
-        await Assert.That(result.JoinColumns.Any(c => c.TableAlias == "employment" && c.ColumnName == "DX_FK_FL_Command_ID")).IsTrue();
-        await Assert.That(result.JoinColumns.Any(c => c.TableAlias == "sc" && c.ColumnName == "DX_ID")).IsTrue();
+        await Assert.That(result.JoinColumns).Contains(columnReference => columnReference is { TableAlias: "employment", ColumnName: "DX_FK_FL_Command_ID" });
+        await Assert.That(result.JoinColumns).Contains(columnReference => columnReference is { TableAlias: "sc", ColumnName: "DX_ID" });
 
         // Verify function calls in the outer query
         var finalJsonColumn = result.FinalQueryColumns.FirstOrDefault(c => c.Alias == "JSON_BERICHT_Compressed");
