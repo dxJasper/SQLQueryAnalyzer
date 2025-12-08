@@ -1,5 +1,8 @@
+using SqlQueryAnalyzer;
 using SqlQueryAnalyzer.Models;
-using Xunit;
+using TUnit.Assertions;
+using TUnit.Assertions.Extensions;
+using TUnit.Core;
 
 namespace SqlQueryAnalyzer.Tests;
 
@@ -8,359 +11,358 @@ public class ComplexQueriesTests
     private readonly SqlQueryAnalyzerService _analyzer = new();
     private static readonly AnalysisOptions Options = new() { IncludeInnerTables = false, DeduplicateResults = true };
 
-    [Fact]
-    public void Analyze_ComplexJoinGroupOrder_Query_ReturnsExpectedStructures()
+    [Test]
+    public async Task Analyze_ComplexJoinGroupOrder_Query_ReturnsExpectedStructures()
     {
-        const string sql = """
-                               SELECT 
-                                   c.category_name,
-                                   p.supplier_id,
-                                   COUNT(*) AS product_count,
-                                   SUM(p.unit_price * p.units_in_stock) AS total_value,
-                                   AVG(p.unit_price) AS avg_price
-                               FROM dbo.Products p
-                               INNER JOIN dbo.Categories c ON p.category_id = c.category_id
-                               LEFT JOIN dbo.Suppliers s ON p.supplier_id = s.supplier_id
-                               WHERE p.discontinued = 0 AND p.unit_price > 10
-                               GROUP BY c.category_name, p.supplier_id
-                               HAVING COUNT(*) > 5
-                               ORDER BY total_value DESC, c.category_name ASC
-                           """;
+        var sql = """
+            SELECT 
+                c.category_name,
+                p.supplier_id,
+                COUNT(*) AS product_count,
+                SUM(p.unit_price * p.units_in_stock) AS total_value,
+                AVG(p.unit_price) AS avg_price
+            FROM dbo.Products p
+            INNER JOIN dbo.Categories c ON p.category_id = c.category_id
+            LEFT JOIN dbo.Suppliers s ON p.supplier_id = s.supplier_id
+            WHERE p.discontinued = 0 AND p.unit_price > 10
+            GROUP BY c.category_name, p.supplier_id
+            HAVING COUNT(*) > 5
+            ORDER BY total_value DESC, c.category_name ASC
+        """;
 
         var result = _analyzer.Analyze(sql, Options);
-        Assert.False(result.HasErrors);
+        await Assert.That(result.HasErrors).IsFalse();
 
-        Assert.Contains(result.Tables, t => t is { TableName: "Products", Alias: "p" });
-        Assert.Contains(result.Tables, t => t is { TableName: "Categories", Alias: "c" });
-        Assert.Contains(result.Tables, t => t is { TableName: "Suppliers", Alias: "s" });
+        await Assert.That(result.Tables.Any(t => t.TableName == "Products" && t.Alias == "p")).IsTrue();
+        await Assert.That(result.Tables.Any(t => t.TableName == "Categories" && t.Alias == "c")).IsTrue();
+        await Assert.That(result.Tables.Any(t => t.TableName == "Suppliers" && t.Alias == "s")).IsTrue();
 
-        Assert.Contains(result.SelectColumns, c => c is { ColumnName: "category_name", TableAlias: "c" });
-        Assert.Contains(result.SelectColumns, c => c is { ColumnName: "supplier_id", TableAlias: "p" });
-        Assert.Contains(result.SelectColumns, c => c.Alias == "product_count");
-        Assert.Contains(result.OrderByColumns, c => c is { ColumnName: "total_value", IsAscending: false });
+        await Assert.That(result.SelectColumns.Any(c => c.ColumnName == "category_name" && c.TableAlias == "c")).IsTrue();
+        await Assert.That(result.SelectColumns.Any(c => c.ColumnName == "supplier_id" && c.TableAlias == "p")).IsTrue();
+        await Assert.That(result.SelectColumns.Any(c => c.Alias == "product_count")).IsTrue();
+        await Assert.That(result.OrderByColumns.Any(c => c.ColumnName == "total_value" && !c.IsAscending)).IsTrue();
 
-        Assert.Contains(result.ColumnLineages, l => (l.OutputAlias ?? l.OutputColumn) == "avg_price" && l.Transformation == TransformationType.Aggregate);
+        await Assert.That(result.ColumnLineages.Any(l => (l.OutputAlias ?? l.OutputColumn) == "avg_price" && l.Transformation == TransformationType.Aggregate)).IsTrue();
     }
 
-    [Fact]
-    public void Analyze_CteAndInnerQueries_ReturnsCteAndTopLevelTables()
+    [Test]
+    public async Task Analyze_CteAndInnerQueries_ReturnsCteAndTopLevelTables()
     {
-        const string sql = """
-                               WITH ActiveCustomers AS (
-                                   SELECT customer_id, name, email
-                                   FROM dbo.Customers
-                                   WHERE status = 'Active'
-                               ),
-                               RecentOrders AS (
-                                   SELECT customer_id, COUNT(*) as order_count, MAX(order_date) as last_order
-                                   FROM dbo.Orders
-                                   WHERE order_date > DATEADD(month, -3, GETDATE())
-                                   GROUP BY customer_id
-                               )
-                               SELECT 
-                                   ac.customer_id,
-                                   ac.name,
-                                   ac.email,
-                                   ro.order_count,
-                                   ro.last_order
-                               FROM ActiveCustomers ac
-                               LEFT JOIN RecentOrders ro ON ac.customer_id = ro.customer_id
-                               WHERE ro.order_count > 5 OR ro.order_count IS NULL
-                               ORDER BY ro.order_count DESC
-                           """;
+        var sql = """
+            WITH ActiveCustomers AS (
+                SELECT customer_id, name, email
+                FROM dbo.Customers
+                WHERE status = 'Active'
+            ),
+            RecentOrders AS (
+                SELECT customer_id, COUNT(*) as order_count, MAX(order_date) as last_order
+                FROM dbo.Orders
+                WHERE order_date > DATEADD(month, -3, GETDATE())
+                GROUP BY customer_id
+            )
+            SELECT 
+                ac.customer_id,
+                ac.name,
+                ac.email,
+                ro.order_count,
+                ro.last_order
+            FROM ActiveCustomers ac
+            LEFT JOIN RecentOrders ro ON ac.customer_id = ro.customer_id
+            WHERE ro.order_count > 5 OR ro.order_count IS NULL
+            ORDER BY ro.order_count DESC
+        """;
 
         var result = _analyzer.Analyze(sql, Options);
-        Assert.False(result.HasErrors);
+        await Assert.That(result.HasErrors).IsFalse();
 
-        Assert.Contains(result.Tables, t => t is { Type: TableReferenceType.Cte, TableName: "ActiveCustomers" });
-        Assert.Contains(result.Tables, t => t is { Type: TableReferenceType.Cte, TableName: "RecentOrders" });
+        await Assert.That(result.Tables.Any(t => t.Type == TableReferenceType.Cte && t.TableName == "ActiveCustomers")).IsTrue();
+        await Assert.That(result.Tables.Any(t => t.Type == TableReferenceType.Cte && t.TableName == "RecentOrders")).IsTrue();
 
-        Assert.Contains(result.SelectColumns, c => c is { TableAlias: "ac", ColumnName: "customer_id" });
-        Assert.Contains(result.SelectColumns, c => c is { TableAlias: "ro", ColumnName: "order_count" });
+        await Assert.That(result.SelectColumns.Any(c => c.TableAlias == "ac" && c.ColumnName == "customer_id")).IsTrue();
+        await Assert.That(result.SelectColumns.Any(c => c.TableAlias == "ro" && c.ColumnName == "order_count")).IsTrue();
 
-        Assert.Contains(result.ColumnLineages, l => (l.OutputAlias ?? l.OutputColumn) == "last_order");
+        await Assert.That(result.ColumnLineages.Any(l => (l.OutputAlias ?? l.OutputColumn) == "last_order")).IsTrue();
     }
 
-    [Fact]
-    public void Analyze_Subqueries_CollectsSubqueryInfoAndTables()
+    [Test]
+    public async Task Analyze_Subqueries_CollectsSubqueryInfoAndTables()
     {
-        const string sql = """
-                               SELECT 
-                                   p.product_id,
-                                   p.name,
-                                   (SELECT AVG(price) FROM dbo.Products) as avg_price
-                               FROM dbo.Products p
-                               WHERE p.category_id IN (
-                                   SELECT category_id 
-                                   FROM dbo.Categories 
-                                   WHERE active = 1
-                               )
-                               AND EXISTS (
-                                   SELECT 1 
-                                   FROM dbo.Inventory i 
-                                   WHERE i.product_id = p.product_id AND i.quantity > 0
-                               )
-                           """;
+        var sql = """
+            SELECT 
+                p.product_id,
+                p.name,
+                (SELECT AVG(price) FROM dbo.Products) as avg_price
+            FROM dbo.Products p
+            WHERE p.category_id IN (
+                SELECT category_id 
+                FROM dbo.Categories 
+                WHERE active = 1
+            )
+            AND EXISTS (
+                SELECT 1 
+                FROM dbo.Inventory i 
+                WHERE i.product_id = p.product_id AND i.quantity > 0
+            )
+        """;
 
         var result = _analyzer.Analyze(sql, Options);
-        Assert.False(result.HasErrors);
+        await Assert.That(result.HasErrors).IsFalse();
 
-        Assert.Contains(result.Tables, t => t is { TableName: "Products", Alias: "p" });
-        Assert.Contains(result.SubQueries, s => s.Type == SubQueryType.ScalarSubquery);
-        Assert.Contains(result.SubQueries, s => s.Type == SubQueryType.InSubquery);
-        Assert.Contains(result.SubQueries, s => s.Type == SubQueryType.ExistsSubquery);
+        await Assert.That(result.Tables.Any(t => t.TableName == "Products" && t.Alias == "p")).IsTrue();
+        await Assert.That(result.SubQueries.Any(s => s.Type == SubQueryType.ScalarSubquery)).IsTrue();
+        await Assert.That(result.SubQueries.Any(s => s.Type == SubQueryType.InSubquery)).IsTrue();
+        await Assert.That(result.SubQueries.Any(s => s.Type == SubQueryType.ExistsSubquery)).IsTrue();
 
-        Assert.Contains(result.ColumnLineages, l => (l.OutputAlias ?? l.OutputColumn) == "avg_price" && l.Transformation == TransformationType.Subquery);
+        await Assert.That(result.ColumnLineages.Any(l => (l.OutputAlias ?? l.OutputColumn) == "avg_price" && l.Transformation == TransformationType.Subquery)).IsTrue();
     }
 
-    [Fact]
-    public void Analyze_CaseExpressionsAndAggregates_LineageAndColumnsDetected()
+    [Test]
+    public async Task Analyze_CaseExpressionsAndAggregates_LineageAndColumnsDetected()
     {
-        const string sql = """
-                               SELECT 
-                                   CASE WHEN amount > 100 THEN 'High' ELSE 'Low' END AS amount_group,
-                                   SUM(amount) AS total_amount,
-                                   COUNT(*) AS cnt
-                               FROM dbo.Payments p
-                               WHERE p.status = 'OK'
-                               GROUP BY CASE WHEN amount > 100 THEN 'High' ELSE 'Low' END
-                           """;
+        var sql = """
+            SELECT 
+                CASE WHEN amount > 100 THEN 'High' ELSE 'Low' END AS amount_group,
+                SUM(amount) AS total_amount,
+                COUNT(*) AS cnt
+            FROM dbo.Payments p
+            WHERE p.status = 'OK'
+            GROUP BY CASE WHEN amount > 100 THEN 'High' ELSE 'Low' END
+        """;
 
         var result = _analyzer.Analyze(sql, Options);
-        Assert.False(result.HasErrors);
+        await Assert.That(result.HasErrors).IsFalse();
 
-        Assert.Contains(result.SelectColumns, c => c.Alias == "amount_group");
-        Assert.Contains(result.SelectColumns, c => c.Alias == "total_amount");
-        Assert.Contains(result.SelectColumns, c => c.Alias == "cnt");
+        await Assert.That(result.SelectColumns.Any(c => c.Alias == "amount_group")).IsTrue();
+        await Assert.That(result.SelectColumns.Any(c => c.Alias == "total_amount")).IsTrue();
+        await Assert.That(result.SelectColumns.Any(c => c.Alias == "cnt")).IsTrue();
 
-        Assert.Contains(result.ColumnLineages, l => (l.OutputAlias ?? l.OutputColumn) == "amount_group" && l.Transformation == TransformationType.Case);
-        Assert.Contains(result.ColumnLineages, l => (l.OutputAlias ?? l.OutputColumn) == "total_amount" && l.Transformation == TransformationType.Aggregate);
-        Assert.Contains(result.ColumnLineages, l => (l.OutputAlias ?? l.OutputColumn) == "cnt" && l.Transformation == TransformationType.Aggregate);
+        await Assert.That(result.ColumnLineages.Any(l => (l.OutputAlias ?? l.OutputColumn) == "amount_group" && l.Transformation == TransformationType.Case)).IsTrue();
+        await Assert.That(result.ColumnLineages.Any(l => (l.OutputAlias ?? l.OutputColumn) == "total_amount" && l.Transformation == TransformationType.Aggregate)).IsTrue();
+        await Assert.That(result.ColumnLineages.Any(l => (l.OutputAlias ?? l.OutputColumn) == "cnt" && l.Transformation == TransformationType.Aggregate)).IsTrue();
     }
 
-    [Fact]
-    public void Analyze_GroupByQuery_ReturnsGroupByColumns()
+    [Test]
+    public async Task Analyze_GroupByQuery_ReturnsGroupByColumns()
     {
-        const string sql = """
-                               SELECT 
-                                   c.category_name,
-                                   p.supplier_id,
-                                   COUNT(*) AS product_count
-                               FROM dbo.Products p
-                               INNER JOIN dbo.Categories c ON p.category_id = c.category_id
-                               GROUP BY c.category_name, p.supplier_id
-                           """;
+        var sql = """
+            SELECT 
+                c.category_name,
+                p.supplier_id,
+                COUNT(*) AS product_count
+            FROM dbo.Products p
+            INNER JOIN dbo.Categories c ON p.category_id = c.category_id
+            GROUP BY c.category_name, p.supplier_id
+        """;
 
         // Test without deduplication first
         var resultNoDedup = _analyzer.Analyze(sql, new AnalysisOptions { DeduplicateResults = false });
-        Assert.False(resultNoDedup.HasErrors);
-
+        await Assert.That(resultNoDedup.HasErrors).IsFalse();
+        
         // Test with deduplication
         var result = _analyzer.Analyze(sql, Options);
-        Assert.False(result.HasErrors);
+        await Assert.That(result.HasErrors).IsFalse();
 
-        Assert.True(result.GroupByColumns.Count >= 2, $"Expected at least 2 GROUP BY columns, got {result.GroupByColumns.Count}");
-        Assert.Contains(result.GroupByColumns, c => c is { TableAlias: "c", ColumnName: "category_name" });
-        Assert.Contains(result.GroupByColumns, c => c is { TableAlias: "p", ColumnName: "supplier_id" });
+        await Assert.That(result.GroupByColumns.Count).IsGreaterThanOrEqualTo(2);
+        await Assert.That(result.GroupByColumns.Any(c => c.TableAlias == "c" && c.ColumnName == "category_name")).IsTrue();
+        await Assert.That(result.GroupByColumns.Any(c => c.TableAlias == "p" && c.ColumnName == "supplier_id")).IsTrue();
     }
 
-    [Fact]
-    public void ValidateSyntax_InvalidSql_ReturnsErrors()
+    [Test]
+    public async Task ValidateSyntax_InvalidSql_ReturnsErrors()
     {
         var (isValid, errors) = _analyzer.ValidateSyntax("SELECT FROM WHERE");
-        Assert.False(isValid);
-        Assert.NotEmpty(errors);
+        await Assert.That(isValid).IsFalse();
+        await Assert.That(errors).IsNotEmpty();
     }
 
-    [Fact]
-    public void Analyze_UnpivotWithDeclareAndCrossApply_ParsesAndAnalyzesCorrectly()
+    [Test]
+    public async Task Analyze_UnpivotWithDeclareAndCrossApply_ParsesAndAnalyzesCorrectly()
     {
-        const string sql = """
-                           DECLARE @MOGID AS NVARCHAR(255) = (
-                           SELECT        v.Value
-                           FROM    DCA.Variable AS v
-                           WHERE    v.Name = 'MOGID'
-                                                           )
-                           SELECT        up.col AS assettype
-                           ,            AAPT.migrate AS migrate
-                           ,            AAPT.accountType AS accountType
-                           ,            up.value AS amount
-                           ,            AAPT.postingType AS postingType
-                           ,            peildatum.valueDate
-                           FROM        AFL.CalculatedPostingAmount CPA
-                               UNPIVOT (
-                           value
-                           FOR col IN ( budget_inhaalindexatie, budget_standaardregel, budget_aanvulling_tv
-                                                   , budget_compensatiedepot, solidariteitsreserve, solidariteitsreserve_initieel
-                                                   , solidariteitsreserve_delta, operationele_reserve, kostenvoorziening
-                                                   , kostenvoorziening_initieel, kostenvoorziening_delta, wezenpensioen_voorziening
-                                                   , wezenpensioen_voorziening_initieel, wezenpensioen_voorziening_delta, pvao_voorziening
-                                                   , pvao_voorziening_initieel, pvao_voorziening_delta, ibnr_aop_voorziening
-                                                   , ibnr_aop_voorziening_initieel, ibnr_aop_voorziening_delta, ibnr_pvao_voorziening
-                                                   , ibnr_pvao_voorziening_initieel, ibnr_pvao_voorziening_delta, totaal_fondsvermogen
-                                                   , totaal_fondsvermogen_initieel, totaal_fondsvermogen_delta
-                                                   )
-                                       ) up
-                           LEFT JOIN    VRT.AccountAndPostingType AAPT
-                           ON AAPT.vermogensOnderdeel = up.col
-                           AND AAPT.MOGID = @MOGID
-                           CROSS APPLY (
-                           SELECT    MAX(lvpkc.PEILDATUMFUNC) AS valueDate
-                           FROM    DK.L33_V_PVS_KLANT_CONTACTPUNT AS lvpkc
-                                       ) AS peildatum
-                           """;
+        var sql = """
+            DECLARE @MOGID AS NVARCHAR(255) = (
+            SELECT        v.Value
+            FROM    DCA.Variable AS v
+            WHERE    v.Name = 'MOGID'
+                                            )
+            SELECT        up.col AS assettype
+            ,            AAPT.migrate AS migrate
+            ,            AAPT.accountType AS accountType
+            ,            up.value AS amount
+            ,            AAPT.postingType AS postingType
+            ,            peildatum.valueDate
+            FROM        AFL.CalculatedPostingAmount CPA
+                UNPIVOT (
+            value
+            FOR col IN ( budget_inhaalindexatie, budget_standaardregel, budget_aanvulling_tv
+                                    , budget_compensatiedepot, solidariteitsreserve, solidariteitsreserve_initieel
+                                    , solidariteitsreserve_delta, operationele_reserve, kostenvoorziening
+                                    , kostenvoorziening_initieel, kostenvoorziening_delta, wezenpensioen_voorziening
+                                    , wezenpensioen_voorziening_initieel, wezenpensioen_voorziening_delta, pvao_voorziening
+                                    , pvao_voorziening_initieel, pvao_voorziening_delta, ibnr_aop_voorziening
+                                    , ibnr_aop_voorziening_initieel, ibnr_aop_voorziening_delta, ibnr_pvao_voorziening
+                                    , ibnr_pvao_voorziening_initieel, ibnr_pvao_voorziening_delta, totaal_fondsvermogen
+                                    , totaal_fondsvermogen_initieel, totaal_fondsvermogen_delta
+                                    )
+                        ) up
+            LEFT JOIN    VRT.AccountAndPostingType AAPT
+            ON AAPT.vermogensOnderdeel = up.col
+            AND AAPT.MOGID = @MOGID
+            CROSS APPLY (
+            SELECT    MAX(lvpkc.PEILDATUMFUNC) AS valueDate
+            FROM    DK.L33_V_PVS_KLANT_CONTACTPUNT AS lvpkc
+                        ) AS peildatum
+            """;
 
         var result = _analyzer.Analyze(sql, Options);
-        Assert.False(result.HasErrors);
+        await Assert.That(result.HasErrors).IsFalse();
 
         // Test UNPIVOT table detection
-        Assert.Contains(result.Tables, t => t is { TableName: "CalculatedPostingAmount", Alias: "CPA" });
-
+        await Assert.That(result.Tables.Any(t => t.TableName == "CalculatedPostingAmount" && t.Alias == "CPA")).IsTrue();
+        
         // Test JOIN detection with complex conditions
-        Assert.Contains(result.Tables, t => t is { TableName: "AccountAndPostingType", Alias: "AAPT", JoinType: JoinType.Left });
-
+        await Assert.That(result.Tables.Any(t => t.TableName == "AccountAndPostingType" && t.Alias == "AAPT" && t.JoinType == JoinType.Left)).IsTrue();
+        
         // Test CROSS APPLY detection (should be treated as a derived table)
-        Assert.Contains(result.Tables, t => t.Alias == "peildatum");
-
+        await Assert.That(result.Tables.Any(t => t.Alias == "peildatum")).IsTrue();
+        
         // Test variable declaration subquery table detection
-        Assert.Contains(result.Tables, t => t is { TableName: "Variable", Alias: "v" });
-
+        await Assert.That(result.Tables.Any(t => t.TableName == "Variable" && t.Alias == "v")).IsTrue();
+        
         // Test column analysis - should have 6 output columns
-        Assert.True(result.FinalQueryColumns.Count >= 6, $"Expected at least 6 final columns, got {result.FinalQueryColumns.Count}");
-
+        await Assert.That(result.FinalQueryColumns.Count).IsGreaterThanOrEqualTo(6);
+        
         // Test that UNPIVOT columns are properly handled
-        Assert.Contains(result.FinalQueryColumns, c => c is { TableAlias: "up", ColumnName: "col" });
-        Assert.Contains(result.FinalQueryColumns, c => c is { TableAlias: "up", ColumnName: "value" });
-
+        await Assert.That(result.FinalQueryColumns.Any(c => c.TableAlias == "up" && c.ColumnName == "col")).IsTrue();
+        await Assert.That(result.FinalQueryColumns.Any(c => c.TableAlias == "up" && c.ColumnName == "value")).IsTrue();
+        
         // Test alias detection
-        Assert.Contains(result.FinalQueryColumns, c => c.Alias == "assettype");
-        Assert.Contains(result.FinalQueryColumns, c => c.Alias == "amount");
-
+        await Assert.That(result.FinalQueryColumns.Any(c => c.Alias == "assettype")).IsTrue();
+        await Assert.That(result.FinalQueryColumns.Any(c => c.Alias == "amount")).IsTrue();
+        
         // Test schema detection from multiple schemas
         var schemas = result.Schemas.ToList();
-        Assert.Contains("AFL", schemas);
-        Assert.Contains("VRT", schemas);
-        Assert.Contains("DCA", schemas);
-        Assert.Contains("DK", schemas);
-
+        await Assert.That(schemas.Contains("AFL")).IsTrue();
+        await Assert.That(schemas.Contains("VRT")).IsTrue();
+        await Assert.That(schemas.Contains("DCA")).IsTrue();
+        await Assert.That(schemas.Contains("DK")).IsTrue();
+        
         // Test JOIN column detection
-        Assert.True(result.JoinColumns.Count >= 2, "Should detect JOIN columns");
-        Assert.Contains(result.JoinColumns, c => c is { TableAlias: "AAPT", ColumnName: "vermogensOnderdeel" });
-        Assert.Contains(result.JoinColumns, c => c is { TableAlias: "up", ColumnName: "col" });
+        await Assert.That(result.JoinColumns.Count).IsGreaterThanOrEqualTo(2);
+        await Assert.That(result.JoinColumns.Any(c => c.TableAlias == "AAPT" && c.ColumnName == "vermogensOnderdeel")).IsTrue();
+        await Assert.That(result.JoinColumns.Any(c => c.TableAlias == "up" && c.ColumnName == "col")).IsTrue();
     }
 
-    [Fact]
-    public void Analyze_ComplexNestedJsonQuery_Returns2FinalColumns()
+    [Test]
+    public async Task Analyze_ComplexNestedJsonQuery_Returns2FinalColumns()
     {
-        const string sql = """
-                           SELECT	jsonsel.DX_ID
-                           ,		COMPRESS(jsonsel.JSON_BERICHT) AS JSON_BERICHT_Compressed
-                           INTO	JSON.Command
-                           FROM	(
-                           			SELECT	sc_.DX_ID
-                           			,		JSON_BERICHT = (
-                           								SELECT			'NlMigrationV11CommandData' AS [_type]
-                           								,			sc.automaticTransferAttempts AS [automaticTransferAttempts]
-                           								,			sc.birthDate AS [birthDate]
-                           								,			CASE WHEN DisabilityInformation.DX_ID IS NOT NULL THEN
-                           														'NlMigrationV11DisabilityInformation'
-                           													ELSE NULL
-                           												END AS [disabilityInformation._type]
-                           								,			DisabilityInformation.benefitBasisFraction AS [disabilityInformation.benefitBasisFraction]
-                           								,			DisabilityInformation.benefitBasisType AS [disabilityInformation.benefitBasisType]
-                           								,			DisabilityInformation.benefitType AS [disabilityInformation.benefitType]
-                           								,			DisabilityInformation.continuationPercentage AS [disabilityInformation.continuationPercentage]
-                           								,			DisabilityInformation.continuationPercentageForAop AS [disabilityInformation.continuationPercentageForAop]
-                           								,			DisabilityInformation.countValueForKapCover AS [disabilityInformation.countValueForKapCover]
-                           								,			DisabilityInformation.dailyWageUncappedAmount AS [disabilityInformation.dailyWageUncappedAmount]
-                           								,			DisabilityInformation.disabilityClassType AS [disabilityInformation.disabilityClassType]
-                           								,			DisabilityInformation.disabilityFraction AS [disabilityInformation.disabilityFraction]
-                           								,			DisabilityInformation.disabilityType AS [disabilityInformation.disabilityType]
-                           								,			DisabilityInformation.entitlementEndDate AS [disabilityInformation.entitlementEndDate]
-                           								,			DisabilityInformation.entitlementStartDate AS [disabilityInformation.entitlementStartDate]
-                           								,			DisabilityInformation.entitlementType AS [disabilityInformation.entitlementType]
-                           								,			DisabilityInformation.sicknessStartDate AS [disabilityInformation.sicknessStartDate]
-                           								,			DisabilityInformation.startLimit AS [disabilityInformation.startLimit]
-                           								,			DisabilityInformation.upperLimit AS [disabilityInformation.upperLimit]
-                           								,			JSON_QUERY(( employment.JSON_Bericht )) AS [employmentDatas]
-                           								,			sc.migrationDate AS [migrationDate]
-                           								,			sc.numberOfRetirements AS [numberOfRetirements]
-                           								,			sc.participationStartDate AS [participationStartDate]
-                           								,			JSON_QUERY(( partnerTypeHistory.JSON_Bericht )) AS [partnerTypeHistory]
-                           								,			JSON_QUERY(( policy.JSON_Bericht )) AS [policyDatas]
-                           								,			sc.relationshipCoversSplit AS [relationshipCoversSplit]
-                           								,			sc.retirementDate AS [retirementDate]
-                           								,			sc.retirementFraction AS retirementFraction
-                           								,			sc.sleeperDate AS sleeperDate
-                           								,			JSON_QUERY(( Untraceable.JSON_Bericht )) AS [untraceables]
-                           								,			sc.voluntaryContributionFraction AS voluntaryContributionFraction
-                           								FROM			FL.Command AS sc
-                           								LEFT JOIN		JSON.Employment AS employment
-                           												ON employment.DX_FK_FL_Command_ID = sc.DX_ID
-                           								LEFT JOIN		JSON.Policy AS policy
-                           												ON policy.DX_FK_FL_Command_ID = sc.DX_ID
-                           								LEFT JOIN		JSON.PartnerTypeHistory AS partnerTypeHistory
-                           												ON partnerTypeHistory.DX_FK_FL_Command_ID = sc.DX_ID
-                           								LEFT JOIN		FL.DisabilityInformation AS DisabilityInformation
-                           												ON DisabilityInformation.DX_FK_FL_Command_ID = sc.DX_ID
-                           								LEFT JOIN		JSON.Untraceable AS Untraceable
-                           												ON Untraceable.DX_FK_FL_Command_ID = sc.DX_ID
-                           								WHERE			sc.DX_ID = sc_.DX_ID
-                           								FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
-                           							)
-                           			FROM	FL.Command AS sc_
-                           		) jsonsel
-                           """;
+        var sql = """
+            SELECT	jsonsel.DX_ID
+            ,		COMPRESS(jsonsel.JSON_BERICHT) AS JSON_BERICHT_Compressed
+            INTO	JSON.Command
+            FROM	(
+            			SELECT	sc_.DX_ID
+            			,		JSON_BERICHT = (
+            								SELECT			'NlMigrationV11CommandData' AS [_type]
+            								,			sc.automaticTransferAttempts AS [automaticTransferAttempts]
+            								,			sc.birthDate AS [birthDate]
+            								,			CASE WHEN DisabilityInformation.DX_ID IS NOT NULL THEN
+            														'NlMigrationV11DisabilityInformation'
+            													ELSE NULL
+            												END AS [disabilityInformation._type]
+            								,			DisabilityInformation.benefitBasisFraction AS [disabilityInformation.benefitBasisFraction]
+            								,			DisabilityInformation.benefitBasisType AS [disabilityInformation.benefitBasisType]
+            								,			DisabilityInformation.benefitType AS [disabilityInformation.benefitType]
+            								,			DisabilityInformation.continuationPercentage AS [disabilityInformation.continuationPercentage]
+            								,			DisabilityInformation.continuationPercentageForAop AS [disabilityInformation.continuationPercentageForAop]
+            								,			DisabilityInformation.countValueForKapCover AS [disabilityInformation.countValueForKapCover]
+            								,			DisabilityInformation.dailyWageUncappedAmount AS [disabilityInformation.dailyWageUncappedAmount]
+            								,			DisabilityInformation.disabilityClassType AS [disabilityInformation.disabilityClassType]
+            								,			DisabilityInformation.disabilityFraction AS [disabilityInformation.disabilityFraction]
+            								,			DisabilityInformation.disabilityType AS [disabilityInformation.disabilityType]
+            								,			DisabilityInformation.entitlementEndDate AS [disabilityInformation.entitlementEndDate]
+            								,			DisabilityInformation.entitlementStartDate AS [disabilityInformation.entitlementStartDate]
+            								,			DisabilityInformation.entitlementType AS [disabilityInformation.entitlementType]
+            								,			DisabilityInformation.sicknessStartDate AS [disabilityInformation.sicknessStartDate]
+            								,			DisabilityInformation.startLimit AS [disabilityInformation.startLimit]
+            								,			DisabilityInformation.upperLimit AS [disabilityInformation.upperLimit]
+            								,			JSON_QUERY(( employment.JSON_Bericht )) AS [employmentDatas]
+            								,			sc.migrationDate AS [migrationDate]
+            								,			sc.numberOfRetirements AS [numberOfRetirements]
+            								,			sc.participationStartDate AS [participationStartDate]
+            								,			JSON_QUERY(( partnerTypeHistory.JSON_Bericht )) AS [partnerTypeHistory]
+            								,			JSON_QUERY(( policy.JSON_Bericht )) AS [policyDatas]
+            								,			sc.relationshipCoversSplit AS [relationshipCoversSplit]
+            								,			sc.retirementDate AS [retirementDate]
+            								,			sc.retirementFraction AS retirementFraction
+            								,			sc.sleeperDate AS sleeperDate
+            								,			JSON_QUERY(( Untraceable.JSON_Bericht )) AS [untraceables]
+            								,			sc.voluntaryContributionFraction AS voluntaryContributionFraction
+            								FROM			FL.Command AS sc
+            								LEFT JOIN		JSON.Employment AS employment
+            												ON employment.DX_FK_FL_Command_ID = sc.DX_ID
+            								LEFT JOIN		JSON.Policy AS policy
+            												ON policy.DX_FK_FL_Command_ID = sc.DX_ID
+            								LEFT JOIN		JSON.PartnerTypeHistory AS partnerTypeHistory
+            												ON partnerTypeHistory.DX_FK_FL_Command_ID = sc.DX_ID
+            								LEFT JOIN		FL.DisabilityInformation AS DisabilityInformation
+            												ON DisabilityInformation.DX_FK_FL_Command_ID = sc.DX_ID
+            								LEFT JOIN		JSON.Untraceable AS Untraceable
+            												ON Untraceable.DX_FK_FL_Command_ID = sc.DX_ID
+            								WHERE			sc.DX_ID = sc_.DX_ID
+            								FOR JSON PATH, WITHOUT_ARRAY_WRAPPER
+            							)
+            			FROM	FL.Command AS sc_
+            		) jsonsel
+            """;
 
         var result = _analyzer.Analyze(sql, Options);
-        Assert.False(result.HasErrors, $"Query should parse without errors. Errors: {string.Join("; ", result.ParseErrors)}");
+        await Assert.That(result.HasErrors).IsFalse();
 
         // CRITICAL: This query should have exactly 2 FinalQueryColumns as specified
-        Assert.Equal(2, result.FinalQueryColumns.Count);
-
+        await Assert.That(result.FinalQueryColumns.Count).IsEqualTo(2);
+        
         // Verify the specific 2 output columns
-        Assert.Contains(result.FinalQueryColumns, c => c is { TableAlias: "jsonsel", ColumnName: "DX_ID" });
-        Assert.Contains(result.FinalQueryColumns, c => c.Alias == "JSON_BERICHT_Compressed");
+        await Assert.That(result.FinalQueryColumns.Any(c => c.TableAlias == "jsonsel" && c.ColumnName == "DX_ID")).IsTrue();
+        await Assert.That(result.FinalQueryColumns.Any(c => c.Alias == "JSON_BERICHT_Compressed")).IsTrue();
 
         // Note: INSERT INTO targets may not be detected as tables by the current visitors
         // This is not a critical issue for the FinalQueryColumns functionality
 
         // Verify the derived table (subquery) is detected
-        Assert.Contains(result.Tables, t => t is { Alias: "jsonsel", Type: TableReferenceType.DerivedTable });
+        await Assert.That(result.Tables.Any(t => t.Alias == "jsonsel" && t.Type == TableReferenceType.DerivedTable)).IsTrue();
 
         // Verify main tables from the complex nested query are detected
-        Assert.Contains(result.Tables, t => t is { FullName: "FL.Command", Alias: "sc" });
-
+        await Assert.That(result.Tables.Any(t => t.FullName == "FL.Command" && t.Alias == "sc")).IsTrue();
+        
         // Verify JSON-related tables are detected
-        Assert.Contains(result.Tables, t => t is { FullName: "JSON.Employment", Alias: "employment" });
-        Assert.Contains(result.Tables, t => t is { FullName: "JSON.Policy", Alias: "policy" });
-        Assert.Contains(result.Tables, t => t is { FullName: "JSON.PartnerTypeHistory", Alias: "partnerTypeHistory" });
-        Assert.Contains(result.Tables, t => t is { FullName: "JSON.Untraceable", Alias: "Untraceable" });
-        Assert.Contains(result.Tables, t => t is { FullName: "FL.DisabilityInformation", Alias: "DisabilityInformation" });
+        await Assert.That(result.Tables.Any(t => t.FullName == "JSON.Employment" && t.Alias == "employment")).IsTrue();
+        await Assert.That(result.Tables.Any(t => t.FullName == "JSON.Policy" && t.Alias == "policy")).IsTrue();
+        await Assert.That(result.Tables.Any(t => t.FullName == "JSON.PartnerTypeHistory" && t.Alias == "partnerTypeHistory")).IsTrue();
+        await Assert.That(result.Tables.Any(t => t.FullName == "JSON.Untraceable" && t.Alias == "Untraceable")).IsTrue();
+        await Assert.That(result.Tables.Any(t => t.FullName == "FL.DisabilityInformation" && t.Alias == "DisabilityInformation")).IsTrue();
 
         // Verify schemas from multiple levels are detected
         var schemas = result.Schemas.ToList();
-        Assert.Contains("JSON", schemas);
-        Assert.Contains("FL", schemas);
+        await Assert.That(schemas.Contains("JSON")).IsTrue();
+        await Assert.That(schemas.Contains("FL")).IsTrue();
 
         // Verify we have many SelectColumns due to the nested complex query
-        Assert.True(result.SelectColumns.Count > 20, $"Expected many SelectColumns from nested query, got {result.SelectColumns.Count}");
-
+        await Assert.That(result.SelectColumns.Count).IsGreaterThan(20);
+        
         // Verify the key distinction: FinalQueryColumns should be much less than SelectColumns
-        Assert.True(result.FinalQueryColumns.Count < result.SelectColumns.Count,
-            $"FinalQueryColumns ({result.FinalQueryColumns.Count}) should be less than SelectColumns ({result.SelectColumns.Count}) for this complex nested query");
+        await Assert.That(result.FinalQueryColumns.Count).IsLessThan(result.SelectColumns.Count);
 
         // Verify JOIN columns from the complex nested structure
-        Assert.True(result.JoinColumns.Count >= 5, "Should detect multiple JOIN columns from nested query");
-
+        await Assert.That(result.JoinColumns.Count).IsGreaterThanOrEqualTo(5);
+        
         // Verify some specific JOIN conditions are detected
-        Assert.Contains(result.JoinColumns, c => c is { TableAlias: "employment", ColumnName: "DX_FK_FL_Command_ID" });
-        Assert.Contains(result.JoinColumns, c => c is { TableAlias: "sc", ColumnName: "DX_ID" });
+        await Assert.That(result.JoinColumns.Any(c => c.TableAlias == "employment" && c.ColumnName == "DX_FK_FL_Command_ID")).IsTrue();
+        await Assert.That(result.JoinColumns.Any(c => c.TableAlias == "sc" && c.ColumnName == "DX_ID")).IsTrue();
 
         // Verify function calls in the outer query
         var finalJsonColumn = result.FinalQueryColumns.FirstOrDefault(c => c.Alias == "JSON_BERICHT_Compressed");
-        Assert.NotNull(finalJsonColumn);
-        Assert.NotNull(finalJsonColumn.Expression);
-        Assert.Contains("COMPRESS", finalJsonColumn.Expression);
+        await Assert.That(finalJsonColumn).IsNotNull();
+        await Assert.That(finalJsonColumn!.Expression).IsNotNull();
+        await Assert.That(finalJsonColumn.Expression!.Contains("COMPRESS")).IsTrue();
     }
 }

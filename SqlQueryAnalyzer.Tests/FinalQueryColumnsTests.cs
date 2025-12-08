@@ -1,5 +1,7 @@
 using SqlQueryAnalyzer.Models;
-using Xunit;
+using TUnit.Assertions;
+using TUnit.Assertions.Extensions;
+using TUnit.Core;
 
 namespace SqlQueryAnalyzer.Tests;
 
@@ -8,8 +10,8 @@ public class FinalQueryColumnsTests
     private readonly SqlQueryAnalyzerService _analyzer = new();
     private static readonly AnalysisOptions Options = new() { DeduplicateResults = true, IncludeInnerTables = false };
 
-    [Fact]
-    public void FinalQueryColumns_SimpleSelect_ReturnsCorrectColumns()
+    [Test]
+    public async Task FinalQueryColumns_SimpleSelect_ReturnsCorrectColumns()
     {
         const string sql = """
                                SELECT 
@@ -20,16 +22,16 @@ public class FinalQueryColumnsTests
                            """;
 
         var result = _analyzer.Analyze(sql, Options);
-        Assert.False(result.HasErrors);
-
-        Assert.Equal(3, result.FinalQueryColumns.Count);
-        Assert.Contains(result.FinalQueryColumns, c => c is { TableAlias: "p", ColumnName: "product_id" });
-        Assert.Contains(result.FinalQueryColumns, c => c is { TableAlias: "p", ColumnName: "name" });
-        Assert.Contains(result.FinalQueryColumns, c => c is { TableAlias: "p", ColumnName: "price" });
+        
+        await Assert.That(result.HasErrors).IsFalse();
+        await Assert.That(result.FinalQueryColumns.Count).IsEqualTo(3);
+        await Assert.That(result.FinalQueryColumns.Any(c => c is { TableAlias: "p", ColumnName: "product_id" })).IsTrue();
+        await Assert.That(result.FinalQueryColumns.Any(c => c is { TableAlias: "p", ColumnName: "name" })).IsTrue();
+        await Assert.That(result.FinalQueryColumns.Any(c => c is { TableAlias: "p", ColumnName: "price" })).IsTrue();
     }
 
-    [Fact]
-    public void FinalQueryColumns_SelectWithAliases_ReturnsCorrectColumns()
+    [Test]
+    public async Task FinalQueryColumns_SelectWithAliases_ReturnsCorrectColumns()
     {
         const string sql = """
                                SELECT 
@@ -40,16 +42,16 @@ public class FinalQueryColumnsTests
                            """;
 
         var result = _analyzer.Analyze(sql, Options);
-        Assert.False(result.HasErrors);
-
-        Assert.Equal(3, result.FinalQueryColumns.Count);
-        Assert.Contains(result.FinalQueryColumns, c => c is { TableAlias: "p", ColumnName: "product_id", Alias: "id" });
-        Assert.Contains(result.FinalQueryColumns, c => c is { TableAlias: "p", ColumnName: "name", Alias: "product_name" });
-        Assert.Contains(result.FinalQueryColumns, c => c is { ColumnName: "[Expression]", Alias: "status" });
+        
+        await Assert.That(result.HasErrors).IsFalse();
+        await Assert.That(result.FinalQueryColumns.Count).IsEqualTo(3);
+        await Assert.That(result.FinalQueryColumns.Any(c => c is { TableAlias: "p", ColumnName: "product_id", Alias: "id" })).IsTrue();
+        await Assert.That(result.FinalQueryColumns.Any(c => c is { TableAlias: "p", ColumnName: "name", Alias: "product_name" })).IsTrue();
+        await Assert.That(result.FinalQueryColumns.Any(c => c is { ColumnName: "[Expression]", Alias: "status" })).IsTrue();
     }
 
-    [Fact]
-    public void FinalQueryColumns_CteQuery_OnlyReturnsFinalQueryColumns()
+    [Test]
+    public async Task FinalQueryColumns_CteQuery_OnlyReturnsFinalQueryColumns()
     {
         const string sql = """
                                WITH ActiveCustomers AS (
@@ -64,23 +66,24 @@ public class FinalQueryColumnsTests
                            """;
 
         var result = _analyzer.Analyze(sql, Options);
-        Assert.False(result.HasErrors);
+        
+        await Assert.That(result.HasErrors).IsFalse();
 
         // FinalQueryColumns should only have the 2 columns from the final SELECT
-        Assert.Equal(2, result.FinalQueryColumns.Count);
-        Assert.Contains(result.FinalQueryColumns, c => c is { TableAlias: "ac", ColumnName: "customer_id" });
-        Assert.Contains(result.FinalQueryColumns, c => c is { TableAlias: "ac", ColumnName: "name" });
+        await Assert.That(result.FinalQueryColumns.Count).IsEqualTo(2);
+        await Assert.That(result.FinalQueryColumns.Any(c => c is { TableAlias: "ac", ColumnName: "customer_id" })).IsTrue();
+        await Assert.That(result.FinalQueryColumns.Any(c => c is { TableAlias: "ac", ColumnName: "name" })).IsTrue();
 
         // Should NOT contain email or phone from the CTE definition
-        Assert.DoesNotContain(result.FinalQueryColumns, c => c.ColumnName == "email");
-        Assert.DoesNotContain(result.FinalQueryColumns, c => c.ColumnName == "phone");
+        await Assert.That(result.FinalQueryColumns.Any(c => c.ColumnName == "email")).IsFalse();
+        await Assert.That(result.FinalQueryColumns.Any(c => c.ColumnName == "phone")).IsFalse();
 
         // SelectColumns should contain all columns (including CTE columns)
-        Assert.True(result.SelectColumns.Count > result.FinalQueryColumns.Count);
+        await Assert.That(result.SelectColumns.Count).IsGreaterThan(result.FinalQueryColumns.Count);
     }
 
-    [Fact]
-    public void FinalQueryColumns_MultipleCtesQuery_OnlyReturnsFinalQueryColumns()
+    [Test]
+    public async Task FinalQueryColumns_MultipleCtesQuery_OnlyReturnsFinalQueryColumns()
     {
         const string sql = """
                                WITH ActiveCustomers AS (
@@ -103,21 +106,22 @@ public class FinalQueryColumnsTests
                            """;
 
         var result = _analyzer.Analyze(sql, Options);
-        Assert.False(result.HasErrors);
+        
+        await Assert.That(result.HasErrors).IsFalse();
 
         // FinalQueryColumns should only have the 3 columns from the final SELECT
-        Assert.Equal(3, result.FinalQueryColumns.Count);
-        Assert.Contains(result.FinalQueryColumns, c => c is { TableAlias: "ac", ColumnName: "customer_id" });
-        Assert.Contains(result.FinalQueryColumns, c => c is { TableAlias: "ac", ColumnName: "name" });
-        Assert.Contains(result.FinalQueryColumns, c => c is { TableAlias: "ro", ColumnName: "order_count" });
+        await Assert.That(result.FinalQueryColumns.Count).IsEqualTo(3);
+        await Assert.That(result.FinalQueryColumns.Any(c => c is { TableAlias: "ac", ColumnName: "customer_id" })).IsTrue();
+        await Assert.That(result.FinalQueryColumns.Any(c => c is { TableAlias: "ac", ColumnName: "name" })).IsTrue();
+        await Assert.That(result.FinalQueryColumns.Any(c => c is { TableAlias: "ro", ColumnName: "order_count" })).IsTrue();
 
         // Should NOT contain other CTE definition columns
-        Assert.DoesNotContain(result.FinalQueryColumns, c => c.ColumnName == "email");
-        Assert.DoesNotContain(result.FinalQueryColumns, c => c.ColumnName == "last_order");
+        await Assert.That(result.FinalQueryColumns.Any(c => c.ColumnName == "email")).IsFalse();
+        await Assert.That(result.FinalQueryColumns.Any(c => c.ColumnName == "last_order")).IsFalse();
     }
 
-    [Fact]
-    public void FinalQueryColumns_SubqueryInSelect_OnlyReturnsFinalQueryColumns()
+    [Test]
+    public async Task FinalQueryColumns_SubqueryInSelect_OnlyReturnsFinalQueryColumns()
     {
         const string sql = """
                                SELECT 
@@ -128,17 +132,18 @@ public class FinalQueryColumnsTests
                            """;
 
         var result = _analyzer.Analyze(sql, Options);
-        Assert.False(result.HasErrors);
+        
+        await Assert.That(result.HasErrors).IsFalse();
 
         // FinalQueryColumns should only have the 3 columns from the outer SELECT
-        Assert.Equal(3, result.FinalQueryColumns.Count);
-        Assert.Contains(result.FinalQueryColumns, c => c is { TableAlias: "p", ColumnName: "product_id" });
-        Assert.Contains(result.FinalQueryColumns, c => c is { TableAlias: "p", ColumnName: "name" });
-        Assert.Contains(result.FinalQueryColumns, c => c is { Alias: "avg_price", Kind: ColumnKind.Subquery });
+        await Assert.That(result.FinalQueryColumns.Count).IsEqualTo(3);
+        await Assert.That(result.FinalQueryColumns.Any(c => c is { TableAlias: "p", ColumnName: "product_id" })).IsTrue();
+        await Assert.That(result.FinalQueryColumns.Any(c => c is { TableAlias: "p", ColumnName: "name" })).IsTrue();
+        await Assert.That(result.FinalQueryColumns.Any(c => c is { Alias: "avg_price", Kind: ColumnKind.Subquery })).IsTrue();
     }
 
-    [Fact]
-    public void FinalQueryColumns_ComplexQuery_OnlyReturnsFinalQueryColumns()
+    [Test]
+    public async Task FinalQueryColumns_ComplexQuery_OnlyReturnsFinalQueryColumns()
     {
         const string sql = """
                                SELECT 
@@ -156,31 +161,32 @@ public class FinalQueryColumnsTests
                            """;
 
         var result = _analyzer.Analyze(sql, Options);
-        Assert.False(result.HasErrors);
+        
+        await Assert.That(result.HasErrors).IsFalse();
 
         // Should have exactly 5 output columns
-        Assert.Equal(5, result.FinalQueryColumns.Count);
-        Assert.Contains(result.FinalQueryColumns, c => c is { TableAlias: "c", ColumnName: "category_name" });
-        Assert.Contains(result.FinalQueryColumns, c => c is { TableAlias: "p", ColumnName: "supplier_id" });
-        Assert.Contains(result.FinalQueryColumns, c => c is { Alias: "product_count", Kind: ColumnKind.Aggregate });
-        Assert.Contains(result.FinalQueryColumns, c => c is { Alias: "total_value", Kind: ColumnKind.Aggregate });
-        Assert.Contains(result.FinalQueryColumns, c => c is { Alias: "avg_price", Kind: ColumnKind.Aggregate });
+        await Assert.That(result.FinalQueryColumns.Count).IsEqualTo(5);
+        await Assert.That(result.FinalQueryColumns.Any(c => c is { TableAlias: "c", ColumnName: "category_name" })).IsTrue();
+        await Assert.That(result.FinalQueryColumns.Any(c => c is { TableAlias: "p", ColumnName: "supplier_id" })).IsTrue();
+        await Assert.That(result.FinalQueryColumns.Any(c => c is { Alias: "product_count", Kind: ColumnKind.Aggregate })).IsTrue();
+        await Assert.That(result.FinalQueryColumns.Any(c => c is { Alias: "total_value", Kind: ColumnKind.Aggregate })).IsTrue();
+        await Assert.That(result.FinalQueryColumns.Any(c => c is { Alias: "avg_price", Kind: ColumnKind.Aggregate })).IsTrue();
     }
 
-    [Fact]
-    public void FinalQueryColumns_SelectStar_ReturnsStarColumn()
+    [Test]
+    public async Task FinalQueryColumns_SelectStar_ReturnsStarColumn()
     {
         const string sql = "SELECT * FROM Products p";
 
         var result = _analyzer.Analyze(sql, Options);
-        Assert.False(result.HasErrors);
-
-        Assert.Single(result.FinalQueryColumns);
-        Assert.Contains(result.FinalQueryColumns, c => c is { ColumnName: "*", Kind: ColumnKind.Star });
+        
+        await Assert.That(result.HasErrors).IsFalse();
+        await Assert.That(result.FinalQueryColumns).HasSingleItem();
+        await Assert.That(result.FinalQueryColumns.Any(c => c is { ColumnName: "*", Kind: ColumnKind.Star })).IsTrue();
     }
 
-    [Fact]
-    public void FinalQueryColumns_QualifiedSelectStar_ReturnsQualifiedStarColumn()
+    [Test]
+    public async Task FinalQueryColumns_QualifiedSelectStar_ReturnsQualifiedStarColumn()
     {
         const string sql = """
                                SELECT p.*
@@ -189,24 +195,25 @@ public class FinalQueryColumnsTests
                            """;
 
         var result = _analyzer.Analyze(sql, Options);
-        Assert.False(result.HasErrors);
-
-        Assert.Single(result.FinalQueryColumns);
-        Assert.Contains(result.FinalQueryColumns, c => c is { TableAlias: "p", ColumnName: "*", Kind: ColumnKind.Star });
+        
+        await Assert.That(result.HasErrors).IsFalse();
+        await Assert.That(result.FinalQueryColumns).HasSingleItem();
+        await Assert.That(result.FinalQueryColumns.Any(c => c is { TableAlias: "p", ColumnName: "*", Kind: ColumnKind.Star })).IsTrue();
     }
 
-    [Fact]
-    public void FinalQueryColumns_EmptyResult_ForInvalidSql()
+    [Test]
+    public async Task FinalQueryColumns_EmptyResult_ForInvalidSql()
     {
         var sql = "SELECT FROM WHERE";
 
         var result = _analyzer.Analyze(sql, Options);
-        Assert.True(result.HasErrors);
-        Assert.Empty(result.FinalQueryColumns);
+        
+        await Assert.That(result.HasErrors).IsTrue();
+        await Assert.That(result.FinalQueryColumns).IsEmpty();
     }
 
-    [Fact]
-    public void FinalQueryColumns_DifferentFromSelectColumns_WithCte()
+    [Test]
+    public async Task FinalQueryColumns_DifferentFromSelectColumns_WithCte()
     {
         const string sql = """
                                WITH TempData AS (
@@ -221,22 +228,23 @@ public class FinalQueryColumnsTests
                            """;
 
         var result = _analyzer.Analyze(sql, Options);
-        Assert.False(result.HasErrors);
+        
+        await Assert.That(result.HasErrors).IsFalse();
 
         // FinalQueryColumns should only have 2 columns
-        Assert.Equal(2, result.FinalQueryColumns.Count);
+        await Assert.That(result.FinalQueryColumns.Count).IsEqualTo(2);
 
         // SelectColumns should have more (including CTE definition columns)
-        Assert.True(result.SelectColumns.Count > result.FinalQueryColumns.Count);
+        await Assert.That(result.SelectColumns.Count).IsGreaterThan(result.FinalQueryColumns.Count);
 
-        // Verify the final columns are correct
-        Assert.True(result.FinalQueryColumns.All(c => c.TableAlias == "td"));
-        Assert.Contains(result.FinalQueryColumns, c => c.ColumnName == "id");
-        Assert.Contains(result.FinalQueryColumns, c => c.ColumnName == "name");
+        // Verify the final columns are correct  
+        await Assert.That(result.FinalQueryColumns.All(c => c.TableAlias == "td")).IsTrue();
+        await Assert.That(result.FinalQueryColumns.Any(c => c.ColumnName == "id")).IsTrue();
+        await Assert.That(result.FinalQueryColumns.Any(c => c.ColumnName == "name")).IsTrue();
     }
 
-    [Fact]
-    public void FinalQueryColumns_UnpivotQuery_ReturnsExpectedColumns()
+    [Test]
+    public async Task FinalQueryColumns_UnpivotQuery_ReturnsExpectedColumns()
     {
         const string sql = """
                            DECLARE @MOGID AS NVARCHAR(255) = (
@@ -276,23 +284,23 @@ public class FinalQueryColumnsTests
         var result = _analyzer.Analyze(sql, Options);
 
         // The query parses successfully!
-        Assert.False(result.HasErrors);
+        await Assert.That(result.HasErrors).IsFalse();
 
         // Validate the expected 6 FinalQueryColumns as specified
-        Assert.Equal(6, result.FinalQueryColumns.Count);
+        await Assert.That(result.FinalQueryColumns.Count).IsEqualTo(6);
 
         // Also verify SelectColumns includes the subquery SELECT (8 total)
-        Assert.Equal(8, result.SelectColumns.Count);
+        await Assert.That(result.SelectColumns.Count).IsEqualTo(8);
 
         // Verify the distinction: FinalQueryColumns < SelectColumns for this complex query
-        Assert.True(result.FinalQueryColumns.Count < result.SelectColumns.Count);
+        await Assert.That(result.FinalQueryColumns.Count).IsLessThan(result.SelectColumns.Count);
 
         // Verify the specific output columns exist (without being too specific about table aliases)
-        Assert.Contains(result.FinalQueryColumns, c => c.Alias == "assettype");
-        Assert.Contains(result.FinalQueryColumns, c => c.Alias == "migrate");
-        Assert.Contains(result.FinalQueryColumns, c => c.Alias == "accountType");
-        Assert.Contains(result.FinalQueryColumns, c => c.Alias == "amount");
-        Assert.Contains(result.FinalQueryColumns, c => c.Alias == "postingType");
-        Assert.Contains(result.FinalQueryColumns, c => c.ColumnName == "valueDate");
+        await Assert.That(result.FinalQueryColumns.Any(c => c.Alias == "assettype")).IsTrue();
+        await Assert.That(result.FinalQueryColumns.Any(c => c.Alias == "migrate")).IsTrue();
+        await Assert.That(result.FinalQueryColumns.Any(c => c.Alias == "accountType")).IsTrue();
+        await Assert.That(result.FinalQueryColumns.Any(c => c.Alias == "amount")).IsTrue();
+        await Assert.That(result.FinalQueryColumns.Any(c => c.Alias == "postingType")).IsTrue();
+        await Assert.That(result.FinalQueryColumns.Any(c => c.ColumnName == "valueDate")).IsTrue();
     }
 }
