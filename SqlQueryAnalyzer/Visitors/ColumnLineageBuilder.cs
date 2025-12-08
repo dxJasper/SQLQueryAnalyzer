@@ -25,7 +25,6 @@ internal sealed class ColumnLineageBuilder : TSqlConcreteFragmentVisitor
 
     public override void Visit(WithCtesAndXmlNamespaces node)
     {
-        // Track CTE region but let normal traversal work
         _cteDepth++;
         base.Visit(node);
         _cteDepth--;

@@ -9,24 +9,24 @@ namespace SqlQueryAnalyzer.Visitors;
 internal sealed class PredicateColumnVisitor : TSqlConcreteFragmentVisitor
 {
     public List<ColumnReference> Columns { get; } = [];
-    
+
     private bool _inWhereClause;
     private bool _inHavingClause;
-    
+
     public override void Visit(WhereClause node)
     {
         _inWhereClause = true;
         base.Visit(node);
         _inWhereClause = false;
     }
-    
+
     public override void Visit(HavingClause node)
     {
         _inHavingClause = true;
         base.Visit(node);
         _inHavingClause = false;
     }
-    
+
     public override void Visit(ColumnReferenceExpression node)
     {
         if (!_inWhereClause && !_inHavingClause)
@@ -34,10 +34,10 @@ internal sealed class PredicateColumnVisitor : TSqlConcreteFragmentVisitor
             base.Visit(node);
             return;
         }
-        
+
         var usageType = _inHavingClause ? ColumnUsageType.Having : ColumnUsageType.Where;
         var identifiers = node.MultiPartIdentifier?.Identifiers;
-        
+
         var column = identifiers?.Count switch
         {
             1 => new ColumnReference
@@ -75,26 +75,25 @@ internal sealed class PredicateColumnVisitor : TSqlConcreteFragmentVisitor
             },
             _ => null
         };
-        
+
         if (column is not null)
         {
             Columns.Add(column);
         }
-        
+
         base.Visit(node);
     }
 
-    // Prevent traversal into CTEs and subqueries - they're handled separately
     public override void Visit(CommonTableExpression node)
     {
         // Don't traverse into CTEs
     }
-    
+
     public override void Visit(ScalarSubquery node)
     {
         // Don't traverse into scalar subqueries
     }
-    
+
     public override void Visit(QueryDerivedTable node)
     {
         // Don't traverse into derived table subqueries

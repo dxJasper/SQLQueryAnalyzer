@@ -9,24 +9,24 @@ namespace SqlQueryAnalyzer.Visitors;
 internal sealed class JoinColumnVisitor : TSqlConcreteFragmentVisitor
 {
     public List<ColumnReference> Columns { get; } = [];
-    
+
     private bool _inJoinCondition;
-    
+
     public override void Visit(QualifiedJoin node)
     {
-        // Visit the table references first
         node.FirstTableReference?.Accept(this);
         node.SecondTableReference?.Accept(this);
-        
-        // Now process the search condition (ON clause)
-        if (node.SearchCondition is not null)
+
+        if (node.SearchCondition is null)
         {
-            _inJoinCondition = true;
-            node.SearchCondition.Accept(this);
-            _inJoinCondition = false;
+            return;
         }
+
+        _inJoinCondition = true;
+        node.SearchCondition.Accept(this);
+        _inJoinCondition = false;
     }
-    
+
     public override void Visit(ColumnReferenceExpression node)
     {
         if (!_inJoinCondition)
@@ -34,9 +34,9 @@ internal sealed class JoinColumnVisitor : TSqlConcreteFragmentVisitor
             base.Visit(node);
             return;
         }
-        
+
         var identifiers = node.MultiPartIdentifier?.Identifiers;
-        
+
         var column = identifiers?.Count switch
         {
             1 => new ColumnReference
@@ -74,26 +74,25 @@ internal sealed class JoinColumnVisitor : TSqlConcreteFragmentVisitor
             },
             _ => null
         };
-        
+
         if (column is not null)
         {
             Columns.Add(column);
         }
-        
+
         base.Visit(node);
     }
 
-    // Prevent traversal into CTEs and subqueries - they're handled separately
     public override void Visit(CommonTableExpression node)
     {
         // Don't traverse into CTEs
     }
-    
+
     public override void Visit(ScalarSubquery node)
     {
         // Don't traverse into scalar subqueries
     }
-    
+
     public override void Visit(QueryDerivedTable node)
     {
         // Don't traverse into derived table subqueries

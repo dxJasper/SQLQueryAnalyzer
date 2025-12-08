@@ -9,12 +9,14 @@ namespace SqlQueryAnalyzer.Visitors;
 internal sealed class CteVisitor : TSqlConcreteFragmentVisitor
 {
     private readonly SqlQueryAnalyzerService _analyzer;
+    private readonly bool _analyzeNestedQueries;
     
     public List<CteDefinition> Ctes { get; } = [];
     
-    public CteVisitor(SqlQueryAnalyzerService analyzer)
+    public CteVisitor(SqlQueryAnalyzerService analyzer, bool analyzeNestedQueries = true)
     {
         _analyzer = analyzer;
+        _analyzeNestedQueries = analyzeNestedQueries;
     }
     
     public override void Visit(CommonTableExpression node)
@@ -26,7 +28,10 @@ internal sealed class CteVisitor : TSqlConcreteFragmentVisitor
             Name = node.ExpressionName?.Value ?? string.Empty,
             ColumnList = node.Columns?.Select(c => c.Value).ToList() ?? [],
             QueryText = queryText,
-            InnerAnalysis = !string.IsNullOrWhiteSpace(queryText) ? _analyzer.Analyze(queryText) : null,
+            // Only analyze nested queries if the option is enabled
+            InnerAnalysis = _analyzeNestedQueries && !string.IsNullOrWhiteSpace(queryText) 
+                ? _analyzer.Analyze(queryText) 
+                : null,
             StartLine = node.StartLine,
             StartColumn = node.StartColumn
         };

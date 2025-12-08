@@ -9,11 +9,11 @@ namespace SqlQueryAnalyzer.Visitors;
 internal sealed class OrderByColumnVisitor : TSqlConcreteFragmentVisitor
 {
     public List<ColumnReference> Columns { get; } = [];
-    
+
     public override void Visit(ExpressionWithSortOrder node)
     {
         var isAscending = node.SortOrder != SortOrder.Descending;
-        
+
         if (node.Expression is ColumnReferenceExpression colRef)
         {
             var column = ExtractColumnReference(colRef, isAscending);
@@ -26,7 +26,7 @@ internal sealed class OrderByColumnVisitor : TSqlConcreteFragmentVisitor
         {
             var innerVisitor = new OrderByExpressionColumnVisitor();
             node.Expression.Accept(innerVisitor);
-            
+
             foreach (var col in innerVisitor.Columns)
             {
                 Columns.Add(new ColumnReference
@@ -46,11 +46,11 @@ internal sealed class OrderByColumnVisitor : TSqlConcreteFragmentVisitor
             }
         }
     }
-    
+
     private static ColumnReference? ExtractColumnReference(ColumnReferenceExpression colRef, bool isAscending)
     {
         var identifiers = colRef.MultiPartIdentifier?.Identifiers;
-        
+
         return identifiers?.Count switch
         {
             1 => new ColumnReference
@@ -147,17 +147,16 @@ internal sealed class OrderByColumnVisitor : TSqlConcreteFragmentVisitor
         }
     }
 
-    // Prevent traversal into CTEs and subqueries - they're handled separately
     public override void Visit(CommonTableExpression node)
     {
         // Don't traverse into CTEs
     }
-    
+
     public override void Visit(ScalarSubquery node)
     {
         // Don't traverse into scalar subqueries
     }
-    
+
     public override void Visit(QueryDerivedTable node)
     {
         // Don't traverse into derived table subqueries

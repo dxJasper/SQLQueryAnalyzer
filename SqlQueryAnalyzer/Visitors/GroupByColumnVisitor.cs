@@ -9,13 +9,12 @@ namespace SqlQueryAnalyzer.Visitors;
 internal sealed class GroupByColumnVisitor : TSqlConcreteFragmentVisitor
 {
     public List<ColumnReference> Columns { get; } = [];
-    
+
     private bool _inGroupByClause;
     private int _cteDepth;
-    
+
     public override void Visit(WithCtesAndXmlNamespaces node)
     {
-        // Track CTE region but let normal traversal work
         _cteDepth++;
         base.Visit(node);
         _cteDepth--;
@@ -26,19 +25,18 @@ internal sealed class GroupByColumnVisitor : TSqlConcreteFragmentVisitor
         // Skip CTE definitions completely 
         // Do NOT call base.Visit(node)
     }
-    
+
     public override void Visit(GroupByClause node)
     {
         if (_cteDepth > 0)
         {
             return; // Skip GROUP BY inside CTEs
         }
-        
+
         _inGroupByClause = true;
         base.Visit(node);
-        // Don't reset _inGroupByClause here - child nodes are processed after base.Visit()
     }
-    
+
     public override void Visit(ExpressionGroupingSpecification node)
     {
         if (!_inGroupByClause || _cteDepth > 0)
@@ -46,7 +44,7 @@ internal sealed class GroupByColumnVisitor : TSqlConcreteFragmentVisitor
             base.Visit(node);
             return;
         }
-        
+
         if (node.Expression is ColumnReferenceExpression colRef)
         {
             var column = ExtractColumnReference(colRef);
@@ -63,7 +61,7 @@ internal sealed class GroupByColumnVisitor : TSqlConcreteFragmentVisitor
             Columns.AddRange(innerVisitor.Columns);
         }
     }
-    
+
     public override void Visit(ColumnReferenceExpression node)
     {
         if (!_inGroupByClause || _cteDepth > 0)
@@ -71,11 +69,11 @@ internal sealed class GroupByColumnVisitor : TSqlConcreteFragmentVisitor
             base.Visit(node);
         }
     }
-    
+
     private static ColumnReference? ExtractColumnReference(ColumnReferenceExpression colRef)
     {
         var identifiers = colRef.MultiPartIdentifier?.Identifiers;
-        
+
         return identifiers?.Count switch
         {
             1 => new ColumnReference

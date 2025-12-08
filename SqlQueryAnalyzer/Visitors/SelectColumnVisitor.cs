@@ -10,7 +10,7 @@ internal sealed class SelectColumnVisitor : TSqlConcreteFragmentVisitor
 {
     public List<ColumnReference> Columns { get; } = [];
 
-    private int _cteDepth;
+    private readonly int _cteDepth;
     private int _subqueryDepth;
 
     public override void Visit(WithCtesAndXmlNamespaces node)
@@ -30,14 +30,12 @@ internal sealed class SelectColumnVisitor : TSqlConcreteFragmentVisitor
     public override void Visit(QueryDerivedTable node)
     {
         _subqueryDepth++;
-        // Skip inner query traversal
         _subqueryDepth--;
     }
 
     public override void Visit(ScalarSubquery node)
     {
         _subqueryDepth++;
-        // Skip inner query traversal
         _subqueryDepth--;
     }
 
@@ -58,7 +56,7 @@ internal sealed class SelectColumnVisitor : TSqlConcreteFragmentVisitor
         }
 
         var expressionText = SqlQueryAnalyzerService.GetFragmentText(node.Expression);
-        string baseColumnName = "[Expression]";
+        var baseColumnName = "[Expression]";
         string? tableAlias = null;
         string? tableName = null;
         string? schema = null;
@@ -108,13 +106,13 @@ internal sealed class SelectColumnVisitor : TSqlConcreteFragmentVisitor
         Columns.Add(column);
     }
 
-    internal static ColumnReference ExtractColumnReference(
-        ColumnReferenceExpression colRef, 
-        string? alias, 
+    private static ColumnReference ExtractColumnReference(
+        ColumnReferenceExpression colRef,
+        string? alias,
         ColumnUsageType usageType)
     {
         var identifiers = colRef.MultiPartIdentifier?.Identifiers;
-        
+
         return identifiers?.Count switch
         {
             1 => new ColumnReference
@@ -169,31 +167,24 @@ internal sealed class SelectColumnVisitor : TSqlConcreteFragmentVisitor
             }
         };
     }
-    
+
     /// <summary>
     /// Helper visitor to extract column references from expressions
     /// </summary>
-    internal sealed class ExpressionColumnVisitor : TSqlConcreteFragmentVisitor
+    private sealed class ExpressionColumnVisitor(ColumnUsageType usageType) : TSqlConcreteFragmentVisitor
     {
-        private readonly ColumnUsageType _usageType;
-        
         public List<ColumnReference> Columns { get; } = [];
-        
-        public ExpressionColumnVisitor(ColumnUsageType usageType)
-        {
-            _usageType = usageType;
-        }
-        
+
         public override void Visit(ColumnReferenceExpression node)
         {
             var identifiers = node.MultiPartIdentifier?.Identifiers;
-            
+
             var column = identifiers?.Count switch
             {
                 1 => new ColumnReference
                 {
                     ColumnName = identifiers[0].Value,
-                    UsageType = _usageType,
+                    UsageType = usageType,
                     Kind = ColumnKind.Column,
                     StartLine = node.StartLine,
                     StartColumn = node.StartColumn
@@ -202,7 +193,7 @@ internal sealed class SelectColumnVisitor : TSqlConcreteFragmentVisitor
                 {
                     TableAlias = identifiers[0].Value,
                     ColumnName = identifiers[1].Value,
-                    UsageType = _usageType,
+                    UsageType = usageType,
                     Kind = ColumnKind.Column,
                     StartLine = node.StartLine,
                     StartColumn = node.StartColumn
@@ -212,7 +203,7 @@ internal sealed class SelectColumnVisitor : TSqlConcreteFragmentVisitor
                     Schema = identifiers[0].Value,
                     TableName = identifiers[1].Value,
                     ColumnName = identifiers[2].Value,
-                    UsageType = _usageType,
+                    UsageType = usageType,
                     Kind = ColumnKind.Column,
                     StartLine = node.StartLine,
                     StartColumn = node.StartColumn
@@ -220,18 +211,18 @@ internal sealed class SelectColumnVisitor : TSqlConcreteFragmentVisitor
                 _ => new ColumnReference
                 {
                     ColumnName = "[Unknown]",
-                    UsageType = _usageType,
+                    UsageType = usageType,
                     Kind = ColumnKind.Column,
                     StartLine = node.StartLine,
                     StartColumn = node.StartColumn
                 }
             };
-            
+
             Columns.Add(column);
             base.Visit(node);
         }
     }
-    
+
     private static ColumnKind DetermineKind(ScalarExpression expr) => expr switch
     {
         FunctionCall func when IsAggregate(func) => ColumnKind.Aggregate,
@@ -246,7 +237,7 @@ internal sealed class SelectColumnVisitor : TSqlConcreteFragmentVisitor
         ScalarSubquery => ColumnKind.Subquery,
         _ => ColumnKind.Expression
     };
-    
+
     private static bool IsAggregate(FunctionCall func)
     {
         var name = func.FunctionName?.Value?.ToUpperInvariant();

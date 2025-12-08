@@ -114,7 +114,7 @@ public sealed class ColumnReference
     /// </summary>
     public string? SourceIdentifier => TableAlias ?? TableName;
 
-    public string FullName => string.Join(".",
+    private string FullName => string.Join(".",
         new[] { Schema, TableAlias ?? TableName, ColumnName }.Where(s => !string.IsNullOrEmpty(s)));
 
     public override string ToString() =>
@@ -192,7 +192,7 @@ public sealed class SourceColumn
     public string? TableAlias { get; init; }
     public required string ColumnName { get; init; }
 
-    public string FullyQualifiedName => string.Join(".",
+    private string FullyQualifiedName => string.Join(".",
         new[] { Database, Schema, TableName, ColumnName }.Where(s => !string.IsNullOrEmpty(s)));
 
     public override string ToString() => FullyQualifiedName;

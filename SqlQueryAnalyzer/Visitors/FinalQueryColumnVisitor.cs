@@ -9,7 +9,7 @@ namespace SqlQueryAnalyzer.Visitors;
 internal sealed class FinalQueryColumnVisitor : TSqlConcreteFragmentVisitor
 {
     public List<ColumnReference> Columns { get; } = [];
-    
+
     private QuerySpecification? _finalQuerySpec;
     private bool _foundFinalQuery = false;
 
@@ -22,34 +22,45 @@ internal sealed class FinalQueryColumnVisitor : TSqlConcreteFragmentVisitor
     public override void Visit(SelectStatement node)
     {
         // This is a standalone SELECT statement - process it as the final query
-        if (!_foundFinalQuery)
+        if (_foundFinalQuery)
         {
-            _foundFinalQuery = true;
-            ProcessQueryExpression(node.QueryExpression);
+            return;
         }
+
+        _foundFinalQuery = true;
+        ProcessQueryExpression(node.QueryExpression);
     }
 
     public override void Visit(WithCtesAndXmlNamespaces node)
     {
         // For CTE queries, traverse normally but we'll skip CTE content via Visit(CommonTableExpression)
-        if (!_foundFinalQuery)
+        if (_foundFinalQuery)
         {
-            _foundFinalQuery = true;
-            base.Visit(node);
+            return;
         }
+
+        _foundFinalQuery = true;
+        base.Visit(node);
     }
 
     private void ProcessQueryExpression(QueryExpression? queryExpression)
     {
-        if (queryExpression is QuerySpecification querySpec)
+        while (true)
         {
-            _finalQuerySpec = querySpec;
-            ProcessSelectElements(querySpec.SelectElements);
-        }
-        else if (queryExpression is BinaryQueryExpression binaryQuery)
-        {
-            // Handle UNION, INTERSECT, EXCEPT - process the final part
-            ProcessQueryExpression(binaryQuery.SecondQueryExpression);
+            switch (queryExpression)
+            {
+                case QuerySpecification querySpec:
+                    _finalQuerySpec = querySpec;
+                    ProcessSelectElements(querySpec.SelectElements);
+                    break;
+
+                case BinaryQueryExpression binaryQuery:
+                    // Handle UNION, INTERSECT, EXCEPT - process the final part
+                    queryExpression = binaryQuery.SecondQueryExpression;
+                    continue;
+            }
+
+            break;
         }
     }
 
@@ -83,7 +94,7 @@ internal sealed class FinalQueryColumnVisitor : TSqlConcreteFragmentVisitor
         }
 
         var expressionText = SqlQueryAnalyzerService.GetFragmentText(node.Expression);
-        string baseColumnName = "[Expression]";
+        var baseColumnName = "[Expression]";
         string? tableAlias = null;
         string? tableName = null;
         string? schema = null;
@@ -115,7 +126,7 @@ internal sealed class FinalQueryColumnVisitor : TSqlConcreteFragmentVisitor
         };
     }
 
-    private ColumnReference ProcessSelectStarExpression(SelectStarExpression node)
+    private static ColumnReference ProcessSelectStarExpression(SelectStarExpression node)
     {
         return new ColumnReference
         {
@@ -144,13 +155,10 @@ internal sealed class FinalQueryColumnVisitor : TSqlConcreteFragmentVisitor
         // Ignore derived tables
     }
 
-    internal static ColumnReference ExtractColumnReference(
-        ColumnReferenceExpression colRef, 
-        string? alias, 
-        ColumnUsageType usageType)
+    public static ColumnReference ExtractColumnReference(ColumnReferenceExpression colRef, string? alias, ColumnUsageType usageType)
     {
         var identifiers = colRef.MultiPartIdentifier?.Identifiers;
-        
+
         return identifiers?.Count switch
         {
             1 => new ColumnReference
@@ -206,27 +214,20 @@ internal sealed class FinalQueryColumnVisitor : TSqlConcreteFragmentVisitor
         };
     }
 
-    internal sealed class ExpressionColumnVisitor : TSqlConcreteFragmentVisitor
+    public sealed class ExpressionColumnVisitor(ColumnUsageType usageType) : TSqlConcreteFragmentVisitor
     {
-        private readonly ColumnUsageType _usageType;
-        
         public List<ColumnReference> Columns { get; } = [];
-        
-        public ExpressionColumnVisitor(ColumnUsageType usageType)
-        {
-            _usageType = usageType;
-        }
-        
+
         public override void Visit(ColumnReferenceExpression node)
         {
             var identifiers = node.MultiPartIdentifier?.Identifiers;
-            
+
             var column = identifiers?.Count switch
             {
                 1 => new ColumnReference
                 {
                     ColumnName = identifiers[0].Value,
-                    UsageType = _usageType,
+                    UsageType = usageType,
                     Kind = ColumnKind.Column,
                     StartLine = node.StartLine,
                     StartColumn = node.StartColumn
@@ -235,7 +236,7 @@ internal sealed class FinalQueryColumnVisitor : TSqlConcreteFragmentVisitor
                 {
                     TableAlias = identifiers[0].Value,
                     ColumnName = identifiers[1].Value,
-                    UsageType = _usageType,
+                    UsageType = usageType,
                     Kind = ColumnKind.Column,
                     StartLine = node.StartLine,
                     StartColumn = node.StartColumn
@@ -245,7 +246,7 @@ internal sealed class FinalQueryColumnVisitor : TSqlConcreteFragmentVisitor
                     Schema = identifiers[0].Value,
                     TableName = identifiers[1].Value,
                     ColumnName = identifiers[2].Value,
-                    UsageType = _usageType,
+                    UsageType = usageType,
                     Kind = ColumnKind.Column,
                     StartLine = node.StartLine,
                     StartColumn = node.StartColumn
@@ -253,20 +254,20 @@ internal sealed class FinalQueryColumnVisitor : TSqlConcreteFragmentVisitor
                 _ => new ColumnReference
                 {
                     ColumnName = "[Unknown]",
-                    UsageType = _usageType,
+                    UsageType = usageType,
                     Kind = ColumnKind.Column,
                     StartLine = node.StartLine,
                     StartColumn = node.StartColumn
                 }
             };
-            
+
             Columns.Add(column);
         }
-        
+
         // Don't traverse into subqueries within expressions
         public override void Visit(ScalarSubquery node) { }
     }
-    
+
     private static ColumnKind DetermineKind(ScalarExpression expr) => expr switch
     {
         FunctionCall func when IsAggregate(func) => ColumnKind.Aggregate,
@@ -281,7 +282,7 @@ internal sealed class FinalQueryColumnVisitor : TSqlConcreteFragmentVisitor
         ScalarSubquery => ColumnKind.Subquery,
         _ => ColumnKind.Expression
     };
-    
+
     private static bool IsAggregate(FunctionCall func)
     {
         var name = func.FunctionName?.Value?.ToUpperInvariant();

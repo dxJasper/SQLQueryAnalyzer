@@ -12,7 +12,7 @@ internal sealed class TableReferenceVisitor : TSqlConcreteFragmentVisitor
 
     private JoinType? _currentJoinType;
     private readonly HashSet<string> _cteNames = new(StringComparer.OrdinalIgnoreCase);
-    private int _subqueryDepth; // >0 means inside subquery/derived table
+    private bool _insideSubquery = false;
 
     public void SetCteNames(IEnumerable<string> cteNames)
     {
@@ -25,25 +25,98 @@ internal sealed class TableReferenceVisitor : TSqlConcreteFragmentVisitor
 
     public override void Visit(ScalarSubquery node)
     {
-        _subqueryDepth++;
-        // don't traverse children; only mark depth to flag indirect references if needed elsewhere
-        // intentionally not calling base
-        _subqueryDepth--;
+        // Create a separate visitor for the subquery content
+        var subqueryVisitor = new TableReferenceVisitor();
+        subqueryVisitor.SetCteNames(_cteNames);
+        subqueryVisitor._insideSubquery = true;
+        
+        node.QueryExpression.Accept(subqueryVisitor);
+        
+        // Add all tables found in subquery as indirect references
+        Tables.AddRange(subqueryVisitor.Tables);
+        
+        // Don't call base.Visit to avoid double processing
     }
 
     public override void Visit(QueryDerivedTable node)
     {
-        // mark a derived table placeholder but avoid traversing inner query here
+        // mark a derived table placeholder
         var table = new QueryTableReference
         {
             TableName = "[DerivedTable]",
             Alias = node.Alias?.Value,
             Type = TableReferenceType.DerivedTable,
             JoinType = _currentJoinType,
-            DirectReference = _subqueryDepth == 0,
+            DirectReference = !_insideSubquery,
         };
         Tables.Add(table);
-        // do not call base to avoid inner traversal
+        
+        // Create a separate visitor for the derived table content
+        var subqueryVisitor = new TableReferenceVisitor();
+        subqueryVisitor.SetCteNames(_cteNames);
+        subqueryVisitor._insideSubquery = true;
+        
+        node.QueryExpression.Accept(subqueryVisitor);
+        
+        // Add all tables found in derived table as indirect references
+        Tables.AddRange(subqueryVisitor.Tables);
+        
+        // Don't call base.Visit to avoid double processing
+    }
+
+    public override void Visit(InPredicate node)
+    {
+        // Visit the expression being tested
+        node.Expression?.Accept(this);
+        
+        // Handle subquery in IN clause
+        if (node.Subquery is not null)
+        {
+            var subqueryVisitor = new TableReferenceVisitor();
+            subqueryVisitor.SetCteNames(_cteNames);
+            subqueryVisitor._insideSubquery = true;
+            
+            node.Subquery.QueryExpression.Accept(subqueryVisitor);
+            
+            // Add all tables found in subquery as indirect references
+            Tables.AddRange(subqueryVisitor.Tables);
+        }
+        
+        // Visit values if not a subquery
+        if (node.Values is not null)
+        {
+            foreach (var value in node.Values)
+            {
+                value.Accept(this);
+            }
+        }
+    }
+
+    public override void Visit(ExistsPredicate node)
+    {
+        // Create a separate visitor for the EXISTS subquery
+        var subqueryVisitor = new TableReferenceVisitor();
+        subqueryVisitor.SetCteNames(_cteNames);
+        subqueryVisitor._insideSubquery = true;
+        
+        node.Subquery.QueryExpression.Accept(subqueryVisitor);
+        
+        // Add all tables found in subquery as indirect references
+        Tables.AddRange(subqueryVisitor.Tables);
+        
+        // Don't call base.Visit to avoid double processing
+    }
+
+    // Override SelectScalarExpression to handle expressions that contain subqueries
+    public override void Visit(SelectScalarExpression node)
+    {
+        // Only visit the expression if it's NOT a scalar subquery
+        // ScalarSubquery expressions are handled by the Visit(ScalarSubquery) method
+        if (node.Expression is not ScalarSubquery)
+        {
+            node.Expression?.Accept(this);
+        }
+        // Don't call base.Visit - we manually control what gets visited
     }
 
     public override void Visit(QualifiedJoin node)
@@ -86,7 +159,7 @@ internal sealed class TableReferenceVisitor : TSqlConcreteFragmentVisitor
             Alias = node.Alias?.Value,
             Type = isCte ? TableReferenceType.Cte : TableReferenceType.Table,
             JoinType = _currentJoinType,
-            DirectReference = _subqueryDepth == 0
+            DirectReference = !_insideSubquery
         };
 
         Tables.Add(table);

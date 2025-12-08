@@ -12,9 +12,11 @@ public sealed class SqlQueryAnalyzerService : ISqlQueryAnalyzerService
 {
     private readonly TSqlParser _parser;
 
-    public SqlQueryAnalyzerService(SqlServerVersion version = SqlServerVersion.Sql160)
+    public SqlQueryAnalyzerService()
     {
-        _parser = CreateParser(version);
+        // Always use the most recent parser for maximum syntax support
+        // This allows analysis of modern SQL features regardless of target execution environment
+        _parser = new TSql160Parser(initialQuotedIdentifiers: true);
     }
 
     /// <summary>
@@ -40,7 +42,7 @@ public sealed class SqlQueryAnalyzerService : ISqlQueryAnalyzerService
         }
 
         // Extract CTEs first
-        var cteVisitor = new CteVisitor(this);
+        var cteVisitor = new CteVisitor(this, options.AnalyzeNestedQueries);
         fragment.Accept(cteVisitor);
         result.CommonTableExpressions.AddRange(cteVisitor.Ctes);
 
@@ -78,7 +80,7 @@ public sealed class SqlQueryAnalyzerService : ISqlQueryAnalyzerService
         result.OrderByColumns.AddRange(orderByVisitor.Columns);
 
         // Extract subqueries
-        var subqueryVisitor = new SubQueryVisitor(this);
+        var subqueryVisitor = new SubQueryVisitor(this, options.AnalyzeNestedQueries);
         fragment.Accept(subqueryVisitor);
         result.SubQueries.AddRange(subqueryVisitor.SubQueries);
 
@@ -88,9 +90,12 @@ public sealed class SqlQueryAnalyzerService : ISqlQueryAnalyzerService
         result.FinalQueryColumns.AddRange(finalQueryVisitor.Columns);
 
         // Build column lineage
-        var lineageBuilder = new ColumnLineageBuilder(result.Tables);
-        fragment.Accept(lineageBuilder);
-        result.ColumnLineages.AddRange(lineageBuilder.Lineages);
+        if (options.BuildColumnLineage)
+        {
+            var lineageBuilder = new ColumnLineageBuilder(result.Tables);
+            fragment.Accept(lineageBuilder);
+            result.ColumnLineages.AddRange(lineageBuilder.Lineages);
+        }
 
         // Correlate columns back to tables
         var tablesByIdentifier = result.Tables
@@ -262,27 +267,4 @@ public sealed class SqlQueryAnalyzerService : ISqlQueryAnalyzerService
 
         return string.Concat(tokens.Select(t => t.Text));
     }
-
-    private static TSqlParser CreateParser(SqlServerVersion version) => version switch
-    {
-        SqlServerVersion.Sql100 => new TSql100Parser(initialQuotedIdentifiers: true),
-        SqlServerVersion.Sql110 => new TSql110Parser(initialQuotedIdentifiers: true),
-        SqlServerVersion.Sql120 => new TSql120Parser(initialQuotedIdentifiers: true),
-        SqlServerVersion.Sql130 => new TSql130Parser(initialQuotedIdentifiers: true),
-        SqlServerVersion.Sql140 => new TSql140Parser(initialQuotedIdentifiers: true),
-        SqlServerVersion.Sql150 => new TSql150Parser(initialQuotedIdentifiers: true),
-        SqlServerVersion.Sql160 => new TSql160Parser(initialQuotedIdentifiers: true),
-        _ => new TSql160Parser(initialQuotedIdentifiers: true)
-    };
-}
-
-public enum SqlServerVersion
-{
-    Sql100, // SQL Server 2008
-    Sql110, // SQL Server 2012
-    Sql120, // SQL Server 2014
-    Sql130, // SQL Server 2016
-    Sql140, // SQL Server 2017
-    Sql150, // SQL Server 2019
-    Sql160  // SQL Server 2022
 }
