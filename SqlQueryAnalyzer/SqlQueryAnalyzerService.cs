@@ -8,7 +8,7 @@ namespace SqlQueryAnalyzer;
 /// <summary>
 /// Analyzes T-SQL queries and extracts structural information
 /// </summary>
-public sealed class SqlQueryAnalyzerService
+public sealed class SqlQueryAnalyzerService : ISqlQueryAnalyzerService
 {
     private readonly TSqlParser _parser;
 
@@ -275,12 +275,7 @@ public sealed class SqlQueryAnalyzerService
     };
 }
 
-public sealed class AnalysisOptions
-{
-    public bool IncludeInnerTables { get; init; } = true;
-    public bool DeduplicateResults { get; init; } = true;
-
-    public static AnalysisOptions Default { get; } = new AnalysisOptions();
+ = new AnalysisOptions();
 }
 
 public enum SqlServerVersion
