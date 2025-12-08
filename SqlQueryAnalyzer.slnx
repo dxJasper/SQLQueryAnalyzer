@@ -1,5 +1,6 @@
 <Solution>
-  <Project Path="SqlQueryAnalyzer.Demo/SqlQueryAnalyzer.Demo.csproj" />
-  <Project Path="SqlQueryAnalyzer.Tests/SqlQueryAnalyzer.Tests.csproj" />
-  <Project Path="SqlQueryAnalyzer/SqlQueryAnalyzer.csproj" />
+  <Project Path="DXMS.SqlQueryAnalyzer.Benchmark/DXMS.SqlQueryAnalyzer.Benchmark.csproj" />
+  <Project Path="DXMS.SqlQueryAnalyzer.Demo/DXMS.SqlQueryAnalyzer.Demo.csproj" />
+  <Project Path="DXMS.SqlQueryAnalyzer.Tests/DXMS.SqlQueryAnalyzer.Tests.csproj" />
+  <Project Path="DXMS.SqlQueryAnalyzer/DXMS.SqlQueryAnalyzer.csproj" />
 </Solution>
