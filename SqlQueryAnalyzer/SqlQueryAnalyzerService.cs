@@ -1,7 +1,7 @@
 using Microsoft.SqlServer.TransactSql.ScriptDom;
+using SqlQueryAnalyzer.Comparers;
 using SqlQueryAnalyzer.Models;
 using SqlQueryAnalyzer.Visitors;
-using SqlQueryAnalyzer.Comparers;
 
 namespace SqlQueryAnalyzer;
 
@@ -96,6 +96,7 @@ public sealed class SqlQueryAnalyzerService : ISqlQueryAnalyzerService
         var tablesByIdentifier = result.Tables
             .GroupBy(t => t.ReferenceIdentifier, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
         foreach (var col in result.SelectColumns)
         {
             if (col.SourceIdentifier is not null && tablesByIdentifier.TryGetValue(col.SourceIdentifier, out var table))
@@ -273,9 +274,6 @@ public sealed class SqlQueryAnalyzerService : ISqlQueryAnalyzerService
         SqlServerVersion.Sql160 => new TSql160Parser(initialQuotedIdentifiers: true),
         _ => new TSql160Parser(initialQuotedIdentifiers: true)
     };
-}
-
- = new AnalysisOptions();
 }
 
 public enum SqlServerVersion
